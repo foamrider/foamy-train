@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "id": "foamy.train",
+  "name": "Foamy Train",
+  "version": "1.0.0",
+  "author": "foamrider",
+  "description": "Direct trains in Norway with live departure times and service notices.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Trains",
+    "description": "Direct departures, delays, cancellations and station search powered by Entur.",
+    "category": "Information",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "language": "system",
+      "refreshSeconds": 60,
+      "scheduleEnabled": false,
+      "scheduleOutsideMode": "mute",
+      "scheduleMonday": "",
+      "scheduleTuesday": "",
+      "scheduleWednesday": "",
+      "scheduleThursday": "",
+      "scheduleFriday": "",
+      "scheduleSaturday": "",
+      "scheduleSunday": "",
+      "showBarMinutes": true,
+      "route": null
+    },
+    "schema": [
+      {
+        "key": "language",
+        "type": "enum",
+        "label": "Language",
+        "defaultValue": "system",
+        "options": [
+          "system",
+          "en",
+          "nb"
+        ]
+      },
+      {
+        "key": "showBarMinutes",
+        "type": "boolean",
+        "label": "Show minutes in bar",
+        "defaultValue": true
+      },
+      {
+        "key": "refreshSeconds",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "defaultValue": 60,
+        "min": 30,
+        "max": 900,
+        "step": 30
+      },
+      {
+        "key": "scheduleEnabled",
+        "type": "boolean",
+        "label": "Use a weekly schedule",
+        "defaultValue": false
+      },
+      {
+        "key": "scheduleOutsideMode",
+        "type": "enum",
+        "label": "Outside the schedule",
+        "defaultValue": "mute",
+        "options": [
+          "mute",
+          "hide"
+        ]
+      },
+      {
+        "key": "scheduleMonday",
+        "type": "string",
+        "label": "Monday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleTuesday",
+        "type": "string",
+        "label": "Tuesday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleWednesday",
+        "type": "string",
+        "label": "Wednesday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleThursday",
+        "type": "string",
+        "label": "Thursday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleFriday",
+        "type": "string",
+        "label": "Friday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleSaturday",
+        "type": "string",
+        "label": "Saturday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleSunday",
+        "type": "string",
+        "label": "Sunday",
+        "defaultValue": ""
+      }
+    ]
+  },
+  "license": "MIT"
+}

@@ -25,4 +25,14 @@ function stale(report,now,offline) { return report.updatedAt>0 && (report.stale 
 function upcoming(report,now,isStale) { return isStale ? report.departures : report.departures.filter(function(d){return Math.max(d.expected,d.aimed)>=now-30}) }
 function next(departures) { return departures.find(function(d){return !d.cancelled}) || null }
 function minutes(d,now) { return Math.max(0,Math.ceil((d.expected-now)/60)) }
-if(typeof module!=="undefined")module.exports={blank:blank,parse:parse,stale:stale,upcoming:upcoming,next:next,minutes:minutes,validStation:validStation,route:route}
+function durationParts(totalMinutes, language) {
+  var total = Math.max(0, Math.floor(totalMinutes)), hours = Math.floor(total / 60), minutes = total % 60
+  var parts = []
+  if (hours) parts.push({value:hours, unit:language === "nb" ? "t" : "h"})
+  if (minutes || !hours) parts.push({value:minutes, unit:"min"})
+  return parts
+}
+function duration(totalMinutes, language) {
+  return durationParts(totalMinutes, language).map(function(part) {return part.value + " " + part.unit}).join(" ")
+}
+if(typeof module!=="undefined")module.exports={blank:blank,parse:parse,stale:stale,upcoming:upcoming,next:next,minutes:minutes,validStation:validStation,route:route,duration:duration,durationParts:durationParts}

@@ -58,7 +58,7 @@ def main():
             assert all(station["id"].startswith("NSR:StopPlace:") and station["name"] for station in route.values()), route
             assert not (Path(env["XDG_CONFIG_HOME"]) / "foamy.train").exists()
             assert not (Path(env["XDG_STATE_HOME"]) / "foamy.train").exists()
-        print(f"{'Interaction checks passed' if args.interactions else 'Rendered bar states' if args.bar else 'Rendered 39 states'}: {output}")
+        print(f"{'Interaction checks passed' if args.interactions else 'Rendered bar states' if args.bar else 'Rendered departure and settings states'}: {output}")
 
 
 if __name__ == "__main__":

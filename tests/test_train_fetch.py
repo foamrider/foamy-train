@@ -40,6 +40,14 @@ class ParserTests(unittest.TestCase):
     def parse(self, data, language="en"):
         return train.parse_response(data, ROUTE, language, NOW)
 
+    def test_window_uses_expected_time_and_includes_the_boundary(self):
+        boundary = leg(expectedStartTime="2026-09-26T10:04:00+02:00")
+        delayed_outside = leg(id="later", expectedStartTime="2026-09-26T10:04:01+02:00")
+        data = train.parse_response(response(boundary, delayed_outside), ROUTE, "en", NOW, 1)
+        self.assertEqual(len(data["departures"]), 1)
+        self.assertEqual(data["departures"][0]["expected"], NOW + 3600)
+        self.assertEqual(len(train.parse_response(response(boundary, delayed_outside), ROUTE, "en", NOW, 2)["departures"]), 2)
+
     def test_delay_arrival_platform_and_journey(self):
         d = self.parse(response(leg()))["departures"][0]
         self.assertEqual((d["delay"], d["duration"], d["platform"], d["arrivalTime"]), (3, 10, "11", "09:25"))
@@ -132,6 +140,24 @@ class StorageTests(unittest.TestCase):
         reverse = {"from": ROUTE["to"], "to": ROUTE["from"]}
         self.assertNotEqual(train.cache_path(ROUTE, "en"), train.cache_path(reverse, "en"))
         self.assertNotEqual(train.cache_path(ROUTE, "en"), train.cache_path(ROUTE, "nb"))
+
+    def test_changing_hours_fetches_a_new_window_instead_of_reusing_short_cache(self):
+        with patch.object(train.time, "time", return_value=NOW), patch.object(train, "request_json", return_value=response(leg())) as request:
+            train.fetch(ROUTE, "en", look_ahead_hours=1)
+            self.assertEqual(request.call_args.args[1]["variables"]["searchWindow"], 60)
+            train.fetch(ROUTE, "en", look_ahead_hours=24)
+            self.assertEqual(request.call_count, 2)
+            self.assertEqual(request.call_args.args[1]["variables"]["searchWindow"], 1440)
+            train.fetch(ROUTE, "en", look_ahead_hours=24)
+            self.assertEqual(request.call_count, 2)
+        self.assertNotEqual(train.cache_path(ROUTE, "en", 1), train.cache_path(ROUTE, "en", 24))
+
+    def test_invalid_hours_are_rejected_before_network_or_cache(self):
+        with patch.object(train, "request_json") as request:
+            for hours in (0, 25, 1.5, "3", True):
+                with self.assertRaises(train.TrainError):
+                    train.fetch(ROUTE, "en", look_ahead_hours=hours)
+            request.assert_not_called()
 
     def test_offline_never_requests_network(self):
         with patch.object(train, "request_json") as request:

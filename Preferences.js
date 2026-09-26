@@ -1,6 +1,15 @@
 // All user settings, including the ordered station pair, belong to the shell.json widget entry.
 var fields = [
   {
+    "key": "lookAheadHours",
+    "type": "integer",
+    "label": "Next (hours)",
+    "defaultValue": 24,
+    "min": 1,
+    "max": 24,
+    "step": 1
+  },
+  {
     "key": "language",
     "type": "enum",
     "label": "Language",
@@ -86,6 +95,9 @@ var fields = [
   }
 ]
 var norwegian = {
+  "Next (hours)": "Neste (timer)",
+  "late": "forsinket",
+  "Choose between 1 and 24 hours.": "Velg mellom 1 og 24 timer.",
   "Select both stations from search results.": "Velg begge stasjonene fra søkeresultatene.",
   "Invalid station name.": "Ugyldig stasjonsnavn.",
   "Invalid route or unavailable local cache. Select the stations again.": "Ugyldig strekning eller utilgjengelig hurtigbuffer. Velg stasjonene på nytt.",

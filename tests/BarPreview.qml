@@ -5,14 +5,14 @@ import "plugin" as Train
 import "plugin/tests/Fixtures.js" as Fixtures
 Scope {
   FloatingWindow {
-    visible:true;implicitWidth:640;implicitHeight:400;color:Color.popups.background
+    visible:true;implicitWidth:640;implicitHeight:460;color:Color.popups.background
     Rectangle {
-      id:surface;width:640;height:420;color:Color.popups.background
+      id:surface;width:640;height:460;color:Color.popups.background
       Column {
         x:24;y:22;width:592;spacing:14
         Train.TrainText {text:"Minutes shown";font.pixelSize:16}
         Repeater {
-          model:[{label:"On time",mode:"normal"},{label:"Delayed 3 minutes",mode:"delay"},{label:"Incident",mode:"incident"},{label:"Delay + incident",mode:"both"},{label:"Information",mode:"info"},{label:"Cancellation",mode:"cancelled"},{label:"Outside schedule",mode:"schedule"},{label:"Minutes hidden · incident",mode:"hidden"}]
+          model:[{label:"On time",mode:"normal"},{label:"Later departure",mode:"long"},{label:"Delayed 3 minutes",mode:"delay"},{label:"Incident",mode:"incident"},{label:"Delay + incident",mode:"both"},{label:"Information",mode:"info"},{label:"Cancellation",mode:"cancelled"},{label:"Outside schedule",mode:"schedule"},{label:"Minutes hidden · incident",mode:"hidden"}]
           Row {
             required property var modelData
             width:parent.width;height:26;spacing:14
@@ -22,7 +22,7 @@ Scope {
               Train.TrainBar {
                 anchors.left:parent.left;anchors.leftMargin:12;anchors.verticalCenter:parent.verticalCenter
                 readonly property string mode:parent.parent.modelData.mode
-                readonly property var sample:{var r=Fixtures.report("normal");if(mode==="delay"||mode==="both")r.departures[0]=Fixtures.departure("a",13,"R10",3);if(mode==="incident"||mode==="both"||mode==="hidden")r.departures[0].notices=[Fixtures.notice("x","Signal fault","warning")];if(mode==="info")r.departures[0].notices=[Fixtures.notice("x","Shorter train","info")];if(mode==="cancelled")r.departures[1].cancelled=true;return r}
+                readonly property var sample:{var r=Fixtures.report(mode==="long"?"long":"normal");if(mode==="delay"||mode==="both")r.departures[0]=Fixtures.departure("a",13,"R10",3);if(mode==="incident"||mode==="both"||mode==="hidden")r.departures[0].notices=[Fixtures.notice("x","Signal fault","warning")];if(mode==="info")r.departures[0].notices=[Fixtures.notice("x","Shorter train","info")];if(mode==="cancelled")r.departures[1].cancelled=true;return r}
                 next:sample.departures[0];departures:sample.departures;nowEpoch:Fixtures.now
                 withinSchedule:mode!=="schedule";showMinutes:mode!=="hidden";opacity:withinSchedule?1:0.45
               }

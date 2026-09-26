@@ -41,3 +41,16 @@ test('route settings are a validated ordered station pair',()=>{
  assert.deepEqual(Model.route({from:to,to:from}),{from:to,to:from});
  for(const value of [{},false,{from,to:from},{from:{...from,id:'bad'},to},{from:{...from,name:'\nCentral'},to}])assert.throws(()=>Model.route(value));
 });
+
+test('countdowns normalize whole hours and remaining minutes',()=>{
+ for(const [minutes,expected] of [[0,'0 min'],[59,'59 min'],[60,'1 h'],[61,'1 h 1 min'],[724,'12 h 4 min'],[1440,'24 h']])
+  assert.equal(Model.duration(minutes,'en'),expected);
+ assert.equal(Model.duration(724,'nb'),'12 t 4 min');
+ assert.equal(Model.duration(Model.minutes({expected:60*60},1),'en'),'1 h');
+ assert.equal(Model.duration(Model.minutes({expected:60*60},61),'en'),'59 min');
+});
+test('look-ahead hours accept only whole values from one to twenty-four',()=>{
+ assert.equal(Preferences.value({},'lookAheadHours'),24);
+ for(const value of [1,3,24])assert.equal(Preferences.valid('lookAheadHours',value),true);
+ for(const value of [0,25,1.5,'3',true])assert.equal(Preferences.valid('lookAheadHours',value),false);
+});

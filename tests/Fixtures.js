@@ -8,6 +8,7 @@ function departure(id,minutes,line,delay,cancelled,notices){
 }
 function report(state){
  var r={status:"ok",route:route,departures:[departure('a',11,'R10'),departure('b',20,'R11'),departure('c',28,'R10'),departure('d',38,'R10')],routeNotices:[],updatedAt:now,stale:false,error:"",errorCode:""}
+ if(state==="long")r.departures=[departure("a",724,"R12"),departure("b",780,"R12"),departure("c",1439,"R12")]
  if(state==="delayed"||state==="incidents"){
  r.departures[0]=departure('a',11,'R10',3,false,[notice('signal','Delayed by a signal fault at Oslo S.','warning','The departure is waiting for a clear signal. Check the platform display before boarding.'),notice('carriage','Rear carriage closed. Board towards the front.','info')])
  r.departures[1]=departure('b',20,'R11',3,false,[notice('signal2','Signal fault at Oslo S','warning','Staff are working to restore normal service.')])

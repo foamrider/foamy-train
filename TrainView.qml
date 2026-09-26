@@ -76,20 +76,32 @@ Column {
         width: parent.width
         spacing: Style.space(10)
         Row {
+          objectName: "heroCountdown"
           anchors.horizontalCenter: parent.horizontalCenter
-          spacing: Style.space(5)
+          spacing: Style.space(10)
           TrainText {
-            id: countdown
-            text: root.next ? (root.stale ? root.next.expectedTime : String(Model.minutes(root.next, root.nowEpoch))) :
-                              ""
-            font.pixelSize: Style.space(root.stale ? 46 : 52)
+            visible: root.stale
+            text: root.next ? root.next.expectedTime : ""
+            font.pixelSize: Style.space(46)
             font.weight: Font.Light
           }
-          TrainText {
-            visible: !root.stale
-            text: "min"
-            font.pixelSize: Style.space(20)
-            anchors.baseline: countdown.baseline
+          Repeater {
+            model: root.next && !root.stale ? Model.durationParts(Model.minutes(root.next, root.nowEpoch), root.language) : []
+            Row {
+              required property var modelData
+              spacing: Style.space(5)
+              TrainText {
+                id: amount
+                text: parent.modelData.value
+                font.pixelSize: Style.space(52)
+                font.weight: Font.Light
+              }
+              TrainText {
+                text: parent.modelData.unit
+                font.pixelSize: Style.space(20)
+                anchors.baseline: amount.baseline
+              }
+            }
           }
         }
         RowLayout {
@@ -128,7 +140,7 @@ Column {
           }
           TrainText {
             visible: !!root.next && !root.stale
-            text: root.next ? "· " + (root.next.delay > 0 ? root.next.delay + " " + root.tr("min late") : root.tr(
+            text: root.next ? "· " + (root.next.delay > 0 ? Model.duration(root.next.delay, root.language) + " " + root.tr("late") : root.tr(
                                                               root.next.realtime ? "On time" : "Scheduled")) : ""
             color: root.next && root.next.delay > 0 ? root.warning : root.secondary
           }
@@ -229,7 +241,7 @@ Column {
                              },
                              {
                                label: "Journey",
-                               value: root.next.duration + " min"
+                               value: Model.duration(root.next.duration, root.language)
                              }
                            ] : []
         Column {

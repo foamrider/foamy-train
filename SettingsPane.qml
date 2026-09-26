@@ -117,6 +117,7 @@ Column {
     color: Qt.alpha(Color.popups.text, 0.14)
   }
   Repeater {
+    objectName: "preferenceFields"
     model: Preferences.fields.filter(function(f) { return f.type !== "string" })
     Column {
       id: fieldRow
@@ -171,6 +172,7 @@ Column {
         }
         Controls.TextField {
           id: input
+          objectName: fieldRow.modelData.key === "lookAheadHours" ? "hoursInput" : "preferenceInput"
           Layout.preferredWidth: Style.space(68)
           implicitHeight: Style.space(34)
           text: String(fieldRow.current)

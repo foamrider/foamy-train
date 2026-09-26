@@ -55,8 +55,7 @@ Rectangle {
           TrainText {
             Layout.alignment: Qt.AlignTop
             text: root.departure.cancelled ? root.tr("Cancelled") : root.stale ? root.departure.expectedTime :
-                                                                                 Model.minutes(root.departure,
-                                                                                               root.nowEpoch) + " min"
+                                                                                 Model.duration(Model.minutes(root.departure, root.nowEpoch), root.language)
             color: root.departure.cancelled ? Color.urgent : Color.popups.text
           }
         }
@@ -82,7 +81,7 @@ Rectangle {
           }
           TrainText {
             visible: !root.departure.cancelled && !root.stale
-            text: "· " + (root.departure.delay > 0 ? "+" + root.departure.delay + " min" : root.tr(
+            text: "· " + (root.departure.delay > 0 ? "+" + Model.duration(root.departure.delay, root.language) : root.tr(
                                                        root.departure.realtime ? "On time" : "Scheduled"))
             color: root.departure.delay > 0 ? root.warning : root.departure.realtime ? root.success : root.secondary
             font.pixelSize: Style.space(11)

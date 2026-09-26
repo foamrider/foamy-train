@@ -6,7 +6,7 @@ import "plugin/tests/Fixtures.js" as Fixtures
 
 Scope {
   id: root
-  property var states: ["normal", "delayed", "incidents", "route", "cancelled", "offline", "error", "empty", "loading", "unconfigured",
+  property var states: ["normal", "long", "delayed", "incidents", "route", "cancelled", "offline", "error", "empty", "loading", "unconfigured",
     "schedule", "settings", "settings-off"]
   property int index: 0
   property string state: states[index % states.length]

@@ -25,6 +25,8 @@ Panel {
   function preference(key) {
     return Preferences.value(settings, key)
   }
+  readonly property int lookAheadHours: preference("lookAheadHours")
+  onLookAheadHoursChanged: if (initialized) syncRoute()
   readonly property string language: Preferences.language(preference("language"), Qt.locale().name)
   function tr(s) {
     return Preferences.text(s, language)
@@ -142,7 +144,7 @@ Panel {
     }
     requestedGeneration = generation
     requestOffline = !networkReady
-    statusProcess.command = ["timeout", "--kill-after=2s", "18s", "python3", helperPath, "--language", language, "--route", JSON.stringify(report.route)].concat(force
+    statusProcess.command = ["timeout", "--kill-after=2s", "18s", "python3", helperPath, "--language", language, "--hours", String(lookAheadHours), "--route", JSON.stringify(report.route)].concat(force
                                                                                                                         ? ["--force"] :
                                                                                                                           []).concat(
           requestOffline ? ["--offline"] : [])
@@ -283,6 +285,7 @@ Panel {
       iconFontFamily: button.fontFamily
       fontSize: button.fontSize
       showMinutes: root.preference("showBarMinutes")
+      language: root.language
       withinSchedule: root.withinSchedule
       vertical: root.vertical
       stale: root.stale

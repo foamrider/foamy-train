@@ -24,7 +24,8 @@ for details. A yellow countdown means the train is delayed.
 
 Settings include language, minutes in the bar, refresh interval, and an optional
 weekly schedule. Outside the schedule, the widget dims or hides and stops fetching.
-Only direct trains are shown.
+**Next (hours)** sets the search window from 1 to 24 hours (default 24). Only direct
+trains are shown; longer countdowns use hours and minutes.
 
 Your stations and preferences stay in Omarchy's `shell.json`. Station searches and
 selected station IDs are sent to Entur. No account or location permission is needed.

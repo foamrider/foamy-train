@@ -9,6 +9,7 @@ Row {
   property string iconFontFamily: Style.font.family
   property real fontSize: Style.font.body
   property bool showMinutes: true
+  property string language: "en"
   property bool withinSchedule: true
   property bool vertical: false
   property bool stale: false
@@ -41,7 +42,7 @@ Row {
     objectName: "barCountdown"
     visible: root.showMinutes && !root.vertical && root.withinSchedule
     anchors.verticalCenter: parent.verticalCenter
-    text: root.stale ? "—" : root.next ? Model.minutes(root.next, root.nowEpoch) + " min" : "—"
+    text: root.stale ? "—" : root.next ? Model.duration(Model.minutes(root.next, root.nowEpoch), root.language) : "—"
     color: root.live && root.next && root.next.delay > 0 ? root.warning : root.foreground
     font.family: "sans-serif"
     font.pixelSize: root.fontSize

@@ -30,9 +30,19 @@
       "scheduleSaturday": "",
       "scheduleSunday": "",
       "showBarMinutes": true,
-      "route": null
+      "route": null,
+      "lookAheadHours": 24
     },
     "schema": [
+      {
+        "key": "lookAheadHours",
+        "type": "integer",
+        "label": "Next (hours)",
+        "defaultValue": 24,
+        "min": 1,
+        "max": 24,
+        "step": 1
+      },
       {
         "key": "language",
         "type": "enum",

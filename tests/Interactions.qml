@@ -158,6 +158,29 @@ Scope {
         compare(widget.report.status, "unconfigured")
         widget.settings = saved
         compare(widget.report.route.from.id, destination)
+        widget.openSettings()
+        wait(300)
+        // Repeater delegates have visual parents; reach them through the owning repeater.
+        var fields = findChild(widget, "preferenceFields"), hoursRow = null
+        verify(!!fields)
+        for (var i = 0; i < fields.count; i++) {
+          if (fields.itemAt(i).modelData.key === "lookAheadHours") hoursRow = fields.itemAt(i)
+        }
+        verify(!!hoursRow)
+        var hoursInput = findChild(hoursRow, "hoursInput")
+        verify(!!hoursInput)
+        hoursInput.text = "3"
+        hoursInput.editingFinished()
+        tryCompare(widget, "lookAheadHours", 3, 5000)
+        compare(widget.settings.lookAheadHours, 3)
+        tryVerify(function () { return widget.report.status === "ok" }, 18000)
+        verify(widget.report.departures.every(function(d) { return d.expected <= widget.nowEpoch + 3 * 3600 }))
+        hoursInput.text = "25"
+        hoursInput.editingFinished()
+        verify(widget.settingsError !== "")
+        compare(widget.settings.lookAheadHours, 3)
+        hoursInput.text = "3"
+        widget.closeSettings()
         widget.settings = Object.assign({}, widget.settings, {showBarMinutes:false})
         wait(50)
         verify(!findChild(widget,"barCountdown").visible)

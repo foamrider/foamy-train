@@ -31,8 +31,9 @@ NOTICE_FIELDS = """id reportType summary { language value } description { langua
  }"""
 # Entur currently returns no trips for maximumTransfers: 0. Bound the search to 1
 # and enforce the one-rail-leg contract below before showing any journey.
-QUERY = """query Departures($from: String!, $to: String!) {
- trip(from: {place: $from}, to: {place: $to}, numTripPatterns: 12,
+# Use an explicit window: the automatic search can end before the next direct train.
+QUERY = """query Departures($from: String!, $to: String!, $searchWindow: Int!) {
+ trip(from: {place: $from}, to: {place: $to}, numTripPatterns: 12, searchWindow: $searchWindow,
  maximumTransfers: 1, includeRealtimeCancellations: true, includePlannedCancellations: true,
  modes: {transportModes: [{transportMode: rail}]}) {
  tripPatterns { legs { id mode aimedStartTime expectedStartTime aimedEndTime expectedEndTime realtime
@@ -209,7 +210,7 @@ def time_label(epoch: int) -> str:
     return datetime.fromtimestamp(epoch, OSLO).strftime("%H:%M")
 
 
-def parse_response(data: dict, route: dict, language: str, now: int) -> dict:
+def parse_response(data: dict, route: dict, language: str, now: int, look_ahead_hours: int = 24) -> dict:
     if data.get("errors"):
         raise TrainError("api_error", "Entur could not find departures. Try Refresh.")
     try:
@@ -229,7 +230,8 @@ def parse_response(data: dict, route: dict, language: str, now: int) -> dict:
             start = leg.get("fromEstimatedCall") or {}
             end = leg.get("toEstimatedCall") or {}
             cancelled = start.get("cancellation") is True or end.get("cancellation") is True
-            if max(aimed, expected) < now - 60:
+            # Enforce the selected limit even if routing returns a delayed trip beyond its window.
+            if max(aimed, expected) < now - 60 or expected > now + look_ahead_hours * 3600:
                 continue
             identity = str((leg.get("serviceJourney") or {}).get("id") or leg.get("id") or "") + ":" + str(aimed)
             if identity in seen:
@@ -253,8 +255,9 @@ def parse_response(data: dict, route: dict, language: str, now: int) -> dict:
         raise TrainError("invalid_response", "Entur returned an invalid response. Try Refresh.") from error
 
 
-def cache_path(route: dict, language: str) -> Path:
-    key = hashlib.sha256((route_identity(route) + "/" + language).encode()).hexdigest()
+def cache_path(route: dict, language: str, look_ahead_hours: int = 24) -> Path:
+    # A short-window snapshot must not hide departures after the user expands the search.
+    key = hashlib.sha256((route_identity(route) + "/" + language + "/" + str(look_ahead_hours)).encode()).hexdigest()
     return directory("XDG_CACHE_HOME", ".cache") / (key + ".json")
 
 
@@ -286,11 +289,13 @@ def valid_snapshot(value: object, route: dict, now: int) -> bool:
                and n.get("kind") in ("info", "warning") for n in all_notices)
 
 
-def fetch(route: dict | None, language: str, force: bool = False, offline: bool = False) -> dict:
+def fetch(route: dict | None, language: str, force: bool = False, offline: bool = False, look_ahead_hours: int = 24) -> dict:
+    if type(look_ahead_hours) is not int or not 1 <= look_ahead_hours <= 24:
+        raise TrainError("invalid_setting", "Choose between 1 and 24 hours.")
     if route is None:
         return empty("unconfigured")
     now, cached = int(time.time()), None
-    path = cache_path(route, language)
+    path = cache_path(route, language, look_ahead_hours)
     try:
         candidate = read_json(path)
         if valid_snapshot(candidate, route, now):
@@ -303,7 +308,7 @@ def fetch(route: dict | None, language: str, force: bool = False, offline: bool 
     try:
         if offline:
             raise TrainError("offline", "Offline. Showing the last available update.")
-        report = parse_response(request_json(API, {"query": QUERY, "variables": {"from": route["from"]["id"], "to": route["to"]["id"]}}), route, language, now)
+        report = parse_response(request_json(API, {"query": QUERY, "variables": {"from": route["from"]["id"], "to": route["to"]["id"], "searchWindow": look_ahead_hours * 60}}), route, language, now, look_ahead_hours)
         try:
             atomic_json(path, report)
         except OSError:
@@ -321,6 +326,7 @@ def main() -> None:
     parser.add_argument("--search")
     parser.add_argument("--route", help="Station pair from the widget entry in shell.json (JSON)")
     parser.add_argument("--language", choices=("en", "nb"), default="en")
+    parser.add_argument("--hours", type=int, choices=range(1, 25), default=24, help="Look ahead 1–24 hours")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
@@ -329,7 +335,7 @@ def main() -> None:
             result = {"status": "ok", "stations": search(args.search)}
         else:
             route = validate_route(json.loads(args.route)) if args.route is not None else None
-            result = fetch(route, args.language, args.force, args.offline)
+            result = fetch(route, args.language, args.force, args.offline, args.hours)
     except TrainError as error:
         result = dict(empty("error"), error=str(error), errorCode=error.code)
     except (OSError, ValueError) as error:

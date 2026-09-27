@@ -2,7 +2,7 @@
 
 Direct trains in Norway, with live departures, delays, and service notices.
 
-![Foamy Train screenshot with sample departures](screenshot.png)
+![Foamy Train screenshot with sample departures](preview.png)
 
 ## Install
 
@@ -29,6 +29,18 @@ trains are shown; longer countdowns use hours and minutes.
 
 Your stations and preferences stay in Omarchy's `shell.json`. Station searches and
 selected station IDs are sent to Entur. No account or location permission is needed.
+
+## Remove
+
+```sh
+omarchy plugin remove foamy.train
+```
+
+Removal stops departure requests. Cached departure data remains on disk;
+there is no Entur account or subscription to cancel.
+
+Omarchy manages the plugin entry in `shell.json`. Packages and data outside
+the plugin directory are retained unless you remove them separately.
 
 ## License
 

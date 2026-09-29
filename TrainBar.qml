@@ -22,14 +22,15 @@ Row {
   readonly property bool hasWarning: routeNotices.some(function(n) {return n.kind === "warning"})
     || departures.some(function(d) {return d.notices.some(function(n) {return n.kind === "warning"})})
   readonly property bool hasInfo: routeNotices.some(function(n) {return n.kind === "info"})
-    || departures.some(function(d) {return d.notices.some(function(n) {return n.kind === "info"})})
+    // Departure information belongs to the train shown by the countdown.
+    || (next !== null && next.notices.some(function(n) {return n.kind === "info"}))
   readonly property bool hasDelay: departures.some(function(d) {return !d.cancelled && d.delay > 0})
   readonly property color warning: Color.background.hslLightness > 0.5 ? "#86601b" : "#d7b56d"
   // The countdown color describes only the next train. Other affected departures use a notice marker.
   readonly property bool otherDelay: departures.some(function(d) {return !d.cancelled && d.delay > 0 && (!root.next || d.id !== root.next.id)})
   readonly property string noticeIcon: !live ? "" : hasCancellation ? "cancelled"
     : hasWarning || otherDelay || (hasDelay && (!showMinutes || vertical)) ? "warning" : hasInfo ? "info" : ""
-  spacing: Style.space(2)
+  spacing: Style.space(4)
   OpticalGlyph {
     width: Style.bar.iconCanvas
     height: width
@@ -51,6 +52,8 @@ Row {
     objectName: "barNotice"
     visible: root.noticeIcon !== "" && !root.vertical
     anchors.verticalCenter: parent.verticalCenter
+    // Align the SVG's visible strokes with the text rather than its line box.
+    anchors.verticalCenterOffset: -Style.space(1)
     width: Style.space(14)
     height: width
     name: root.noticeIcon

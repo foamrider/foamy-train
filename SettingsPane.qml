@@ -150,7 +150,7 @@ Column {
         implicitHeight: Style.space(36)
         color: "transparent"
         borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
-        radius: Style.space(7)
+        radius: Style.cornerRadius * 2
         fontFamily: "sans-serif"
         foreground: Color.popups.text
         titleSize: Style.space(13)
@@ -184,7 +184,7 @@ Column {
           padding: Style.space(7)
           Accessible.name: root.tr(fieldRow.modelData.label)
           background: Rectangle {
-            radius: Style.space(7)
+            radius: Style.cornerRadius * 2
             color: Qt.alpha(Color.popups.text, 0.055)
             border.width: input.activeFocus ? 1 : 0
             border.color: Color.accent

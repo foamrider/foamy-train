@@ -369,6 +369,7 @@ Panel {
       }
       TrainView {
         id: view
+        cornerRadius: Math.max(0, panel.cornerRadius - Border.top(panel.borderSpec))
         visible: !root.editingSettings
         width: panelScroll.width
         report: root.report

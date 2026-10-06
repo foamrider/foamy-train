@@ -11,7 +11,7 @@ Rectangle {
   property color warning: Color.popups.background.hslLightness > 0.5 ? "#86601b" : "#d7b56d"
   readonly property color secondary: Qt.tint(Color.popups.background, Qt.alpha(Color.popups.text, 0.72))
   implicitHeight: contents.implicitHeight + Style.space(18)
-  radius: Style.space(8)
+  radius: Style.cornerRadius * 2
   color: filled ? Qt.alpha(Color.popups.text, 0.045) : "transparent"
   border.width: activeFocus ? 1 : 0
   border.color: Color.accent

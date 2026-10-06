@@ -49,7 +49,7 @@ RowLayout {
     Keys.onReturnPressed: toggled()
     Keys.onEnterPressed: toggled()
     onToggled: root.changed(checked ? "" : root.lastRange)
-    Rectangle {anchors.fill:parent;color:"transparent";radius:Style.space(6);border.width:parent.activeFocus?1:0;border.color:Color.accent}
+    Rectangle {anchors.fill:parent;color:"transparent";radius:Style.cornerRadius * 2;border.width:parent.activeFocus?1:0;border.color:Color.accent}
   }
   Controls.TextField {
     id: fromInput
@@ -65,7 +65,7 @@ RowLayout {
     selectByMouse: true
     maximumLength: 5
     Accessible.name: root.label + " · " + root.fromLabel
-    background: Rectangle {radius:Style.space(7);color:Qt.alpha(Color.popups.text,0.055);border.width:fromInput.activeFocus?1:0;border.color:Color.accent}
+    background: Rectangle {radius:Style.cornerRadius * 2;color:Qt.alpha(Color.popups.text,0.055);border.width:fromInput.activeFocus?1:0;border.color:Color.accent}
     onEditingFinished: root.saveInputs()
     Keys.onEscapePressed: root.restoreInputs(true)
   }
@@ -83,7 +83,7 @@ RowLayout {
     selectByMouse: true
     maximumLength: 5
     Accessible.name: root.label + " · " + root.toLabel
-    background: Rectangle {radius:Style.space(7);color:Qt.alpha(Color.popups.text,0.055);border.width:toInput.activeFocus?1:0;border.color:Color.accent}
+    background: Rectangle {radius:Style.cornerRadius * 2;color:Qt.alpha(Color.popups.text,0.055);border.width:toInput.activeFocus?1:0;border.color:Color.accent}
     onEditingFinished: root.saveInputs()
     Keys.onEscapePressed: root.restoreInputs(true)
   }

@@ -7,6 +7,7 @@ import "Model.js" as Model
 
 Column {
   id: root
+  property real cornerRadius: Style.cornerRadius * 2
   required property var report
   required property real nowEpoch
   property string language: "en"
@@ -35,6 +36,8 @@ Column {
     width: parent.width
     height: hero.implicitHeight + Style.space(36)
     color: Qt.alpha(Color.popups.text, 0.045)
+    topLeftRadius: root.cornerRadius
+    topRightRadius: root.cornerRadius
     Column {
       id: hero
       x: Style.space(20)
@@ -269,7 +272,7 @@ Column {
       visible: root.stale || root.report.error !== ""
       width: parent.width - parent.padding * 2
       height: warningText.implicitHeight + Style.space(20)
-      radius: Style.space(8)
+      radius: Style.cornerRadius * 2
       color: Qt.alpha(root.warning, 0.08)
       TrainText {
         id: warningText

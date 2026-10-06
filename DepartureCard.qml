@@ -18,7 +18,7 @@ Rectangle {
     return Preferences.text(s, language)
   }
   implicitHeight: body.implicitHeight + Style.space(20)
-  radius: Style.space(9)
+  radius: Style.cornerRadius * 2
   color: Qt.alpha(Color.popups.text, 0.05)
   Column {
     id: body
@@ -32,7 +32,7 @@ Rectangle {
       Rectangle {
         width: Math.max(Style.space(34), lineLabel.implicitWidth + Style.space(12))
         height: Style.space(25)
-        radius: Style.space(5)
+        radius: Style.cornerRadius * 2
         color: Qt.alpha(Color.accent, 0.15)
         TrainText {
           id: lineLabel

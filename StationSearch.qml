@@ -66,7 +66,7 @@ Column {
     selectByMouse: true
     Accessible.name: root.label
     background: Rectangle {
-      radius: Style.space(7)
+      radius: Style.cornerRadius * 2
       color: Qt.alpha(Color.popups.text, 0.055)
       border.width: input.activeFocus ? 1 : 0
       border.color: Color.accent
@@ -96,7 +96,7 @@ Column {
       required property var modelData
       width: root.width
       height: resultText.implicitHeight + Style.space(16)
-      radius: Style.space(6)
+      radius: Style.cornerRadius * 2
       color: hover.containsMouse || activeFocus ? Qt.alpha(Color.accent, 0.12) : Qt.alpha(Color.popups.text, 0.04)
       border.width: activeFocus ? 1 : 0
       border.color: Color.accent

@@ -32,6 +32,7 @@ Row {
     : hasWarning || otherDelay || (hasDelay && (!showMinutes || vertical)) ? "warning" : hasInfo ? "info" : ""
   spacing: Style.space(4)
   OpticalGlyph {
+    id: trainGlyph
     width: Style.bar.iconCanvas
     height: width
     text: "󰔬"
@@ -54,7 +55,7 @@ Row {
     anchors.verticalCenter: parent.verticalCenter
     // Align the SVG's visible strokes with the text rather than its line box.
     anchors.verticalCenterOffset: -Style.space(1)
-    width: Style.space(14)
+    width: trainGlyph.fontSize
     height: width
     name: root.noticeIcon
     color: root.noticeIcon === "cancelled" ? Color.urgent : root.noticeIcon === "info" ? Color.accent : root.warning

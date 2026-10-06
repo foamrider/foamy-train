@@ -30,6 +30,8 @@ trains are shown; longer countdowns use hours and minutes.
 Your stations and preferences stay in Omarchy's `shell.json`. Station searches and
 selected station IDs are sent to Entur. No account or location permission is needed.
 
+Network requests wait briefly for DNS and routes after connection. Temporary failures retry up to three times with increasing delays. Cached departures remain available offline; live polling resumes automatically after reconnection and still respects the weekly schedule and session lock.
+
 ## Remove
 
 ```sh

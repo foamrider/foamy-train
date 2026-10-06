@@ -20,8 +20,17 @@ Panel {
                                                             /^file:\/\//, ""))
   readonly property var lockService: bar?.shell?.firstPartyServiceFor("omarchy.lock")
   readonly property bool sessionLocked: lockService ? lockService.locked === true : false
-  readonly property bool networkReady: Networking.connectivity === NetworkConnectivity.Full || Networking.connectivity
-                                       === NetworkConnectivity.Limited
+  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full
+    || Networking.connectivity === NetworkConnectivity.Limited
+  property bool networkSettled: false
+  readonly property bool networkReady: networkConnected && networkSettled
+  onNetworkConnectedChanged: networkSettled = false
+  Timer {
+    // NetworkManager can report a connection before DNS and routes are usable.
+    interval: 2000
+    running: root.networkConnected && !root.networkSettled
+    onTriggered: root.networkSettled = true
+  }
   function preference(key) {
     return Preferences.value(settings, key)
   }
@@ -42,6 +51,7 @@ Panel {
   onConfiguredRouteChanged: if (initialized) syncRoute()
   Component.onCompleted: { initialized = true; syncRoute() }
   function syncRoute() {
+    resetNetworkRetry()
     // shell.json is authoritative; discard results for a route that was replaced externally.
     generation++
     statusProcess.running = false
@@ -61,6 +71,21 @@ Panel {
   property bool pendingRefresh: false
   property bool pendingForce: false
   property bool requestOffline: false
+  property int networkRetries: 0
+  function resetNetworkRetry() {
+    networkRetry.stop()
+    networkRetries = 0
+  }
+  function retryNetworkRequest() {
+    if (!networkReady || sessionLocked || !withinSchedule || networkRetries >= 3) return
+    // Bound startup recovery without overlapping the existing serialized worker.
+    networkRetry.interval = 2500 * Math.pow(2, networkRetries++)
+    networkRetry.restart()
+  }
+  Timer {
+    id: networkRetry
+    onTriggered: root.refresh(true)
+  }
   SystemClock {
     id: clock
     precision: SystemClock.Seconds
@@ -192,9 +217,13 @@ Panel {
           return
         if (code !== 0) {
           root.fail("Train request failed. Try Refresh.")
+          root.retryNetworkRequest()
           return
         }
         root.report = Model.parse(statusOutput.text)
+        if (["network_error", "http_error"].indexOf(root.report.errorCode) >= 0)
+          root.retryNetworkRequest()
+        else root.resetNetworkRetry()
       } catch (e) {
         root.fail("Invalid train response.")
       } finally {
@@ -204,11 +233,12 @@ Panel {
   }
   Timer {
     interval: root.preference("refreshSeconds") * 1000
-    running: root.initialized && !root.sessionLocked && root.withinSchedule
+    running: root.initialized && root.networkReady && !root.sessionLocked && root.withinSchedule
     repeat: true
     onTriggered: root.refresh(false)
   }
   onNetworkReadyChanged: if (initialized) {
+                           resetNetworkRetry()
                            generation++
                            refresh(true)
                          }
@@ -218,6 +248,7 @@ Panel {
                      }
   onWithinScheduleChanged: {
     if (!initialized) return
+    resetNetworkRetry()
     // Leaving the schedule cancels work and invalidates any already queued response.
     generation++
     pendingRefresh = false
@@ -225,8 +256,10 @@ Panel {
     if (withinSchedule) refresh(true)
     else statusProcess.running = false
   }
-  onSessionLockedChanged: if (initialized && !sessionLocked)
-                            refresh(false)
+  onSessionLockedChanged: {
+    resetNetworkRetry()
+    if (initialized && !sessionLocked) refresh(false)
+  }
   onOpenedChanged: {
     panelScroll.contentY = 0
     if (!opened)

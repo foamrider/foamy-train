@@ -37,7 +37,7 @@ Rectangle {
       width: parent.width
       spacing: Style.space(8)
       TrainIcon {
-        Layout.alignment: Qt.AlignTop
+        Layout.alignment: Qt.AlignVCenter
         width: Style.space(15)
         height: width
         name: root.cancelled && root.notice.kind === "warning" ? "cancelled" : root.notice.kind

@@ -17,7 +17,7 @@ Rectangle {
   function tr(s) {
     return Preferences.text(s, language)
   }
-  implicitHeight: body.implicitHeight + Style.space(20)
+  implicitHeight: body.implicitHeight + Style.space(root.departure.notices.length > 0 ? 15 : 20)
   radius: Style.cornerRadius * 2
   color: Qt.alpha(Color.popups.text, 0.05)
   Column {
@@ -49,11 +49,12 @@ Rectangle {
           Layout.fillWidth: true
           TrainText {
             Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
             text: root.destination
             font.pixelSize: Style.space(13)
           }
           TrainText {
-            Layout.alignment: Qt.AlignTop
+            Layout.alignment: Qt.AlignVCenter
             text: root.departure.cancelled ? root.tr("Cancelled") : root.stale ? root.departure.expectedTime :
                                                                                  Model.duration(Model.minutes(root.departure, root.nowEpoch), root.language)
             color: root.departure.cancelled ? Color.urgent : Color.popups.text
@@ -92,6 +93,7 @@ Rectangle {
     Column {
       visible: root.departure.notices.length > 0
       width: parent.width
+      spacing: Style.space(5)
       Rectangle {
         width: parent.width
         height: 1

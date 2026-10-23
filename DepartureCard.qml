@@ -54,10 +54,23 @@ Rectangle {
             font.pixelSize: Style.space(13)
           }
           TrainText {
+            visible: !root.departure.cancelled
             Layout.alignment: Qt.AlignVCenter
-            text: root.departure.cancelled ? root.tr("Cancelled") : root.stale ? root.departure.expectedTime :
-                                                                                 Model.duration(Model.minutes(root.departure, root.nowEpoch), root.language)
-            color: root.departure.cancelled ? Color.urgent : Color.popups.text
+            text: root.stale ? root.departure.expectedTime : Model.duration(Model.minutes(root.departure, root.nowEpoch), root.language)
+          }
+          Rectangle {
+            visible: root.departure.cancelled
+            Layout.alignment: Qt.AlignVCenter
+            implicitWidth: cancelledLabel.implicitWidth + Style.space(16)
+            implicitHeight: cancelledLabel.implicitHeight + Style.space(8)
+            radius: Style.cornerRadius * 2
+            color: Qt.alpha(Color.urgent, 0.1)
+            TrainText {
+              id: cancelledLabel
+              anchors.centerIn: parent
+              text: root.tr("Cancelled")
+              color: Color.urgent
+            }
           }
         }
         Flow {

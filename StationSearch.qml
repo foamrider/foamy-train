@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import Quickshell.Io
 import qs.Commons
-import "Preferences.js" as Preferences
 import "Model.js" as Model
 
 Column {
@@ -19,7 +18,7 @@ Column {
   property bool searching: false
   signal changed
   function tr(s) {
-    return Preferences.text(s, language)
+    return FoamyI18n.t(s)
   }
   function selectStation(value) {
     selected = value

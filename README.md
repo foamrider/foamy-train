@@ -22,7 +22,7 @@ omarchy plugin add https://github.com/foamrider/foamy-train.git --enable
 Left-click opens departures; right-click opens settings. Expand a service notice
 for details. A yellow countdown means the train is delayed.
 
-Settings include language, minutes in the bar, refresh interval, and an optional
+Settings include minutes in the bar, refresh interval, and an optional
 weekly schedule. Outside the schedule, the widget dims or hides and stops fetching.
 **Next (hours)** sets the search window from 1 to 24 hours (default 24). Only direct
 trains are shown; longer countdowns use hours and minutes.
@@ -50,3 +50,7 @@ Data: [Entur](https://developer.entur.no/docs/open-services/journey-planner), NL
 Code: [MIT](LICENSE), with [Omarchy](LICENSE-OMARCHY) and [Lucide](LICENSE-LUCIDE) notices.
 
 Provided **as is**, without warranty or guaranteed support. Use at your own risk.
+
+Language follows **Omarchy → Setup → Language** on Omarchy 4.5. Plugin language overrides are no longer used. Omarchy 4.0 displays the plugin in English. Missing translations fall back to English.
+
+Translation checks: `python3 tests/i18n-runtime.py` uses the installed shell. Set `OMARCHY_PATH` to a 4.5 source tree to check live language switching against that version.

@@ -16,7 +16,6 @@ test('preferences validate clock ranges, integers and language',()=>{
  assert.equal(Preferences.valid('showBarMinutes',false),true);
  assert.equal(Preferences.valid('showBarMinutes','false'),false);
  assert.equal(Preferences.valid('refreshSeconds','60'),false);
- assert.equal(Preferences.language('system','nb_NO'),'nb');
 });
 test('stale snapshots do not imply live predictions',()=>{
  const r={...Model.blank('ok'),updatedAt:100,departures:[{id:'a',expected:120,aimed:120,cancelled:false},{id:'b',expected:500,aimed:500,cancelled:true}]};
@@ -45,7 +44,7 @@ test('route settings are a validated ordered station pair',()=>{
 test('countdowns normalize whole hours and remaining minutes',()=>{
  for(const [minutes,expected] of [[0,'0 min'],[59,'59 min'],[60,'1 h'],[61,'1 h 1 min'],[724,'12 h 4 min'],[1440,'24 h']])
   assert.equal(Model.duration(minutes,'en'),expected);
- assert.equal(Model.duration(724,'nb'),'12 t 4 min');
+ assert.equal(Model.duration(724,'no'),'12 t 4 min');
  assert.equal(Model.duration(Model.minutes({expected:60*60},1),'en'),'1 h');
  assert.equal(Model.duration(Model.minutes({expected:60*60},61),'en'),'59 min');
 });

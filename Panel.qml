@@ -36,9 +36,9 @@ Panel {
   }
   readonly property int lookAheadHours: preference("lookAheadHours")
   onLookAheadHoursChanged: if (initialized) syncRoute()
-  readonly property string language: Preferences.language(preference("language"), Qt.locale().name)
+  readonly property string language: FoamyI18n.language
   function tr(s) {
-    return Preferences.text(s, language)
+    return FoamyI18n.t(s)
   }
   property var report: Model.blank("loading")
   property bool initialized: false
@@ -169,7 +169,7 @@ Panel {
     }
     requestedGeneration = generation
     requestOffline = !networkReady
-    statusProcess.command = ["timeout", "--kill-after=2s", "18s", "python3", helperPath, "--language", language, "--hours", String(lookAheadHours), "--route", JSON.stringify(report.route)].concat(force
+    statusProcess.command = ["timeout", "--kill-after=2s", "18s", "python3", helperPath, "--language", language === "no" ? "nb" : "en", "--hours", String(lookAheadHours), "--route", JSON.stringify(report.route)].concat(force
                                                                                                                         ? ["--force"] :
                                                                                                                           []).concat(
           requestOffline ? ["--offline"] : [])

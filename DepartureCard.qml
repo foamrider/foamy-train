@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
-import "Preferences.js" as Preferences
 import "Model.js" as Model
 
 Rectangle {
@@ -15,7 +14,7 @@ Rectangle {
   readonly property color warning: Color.popups.background.hslLightness > 0.5 ? "#86601b" : "#d7b56d"
   readonly property color success: Color.popups.background.hslLightness > 0.5 ? "#437341" : "#9fbe92"
   function tr(s) {
-    return Preferences.text(s, language)
+    return FoamyI18n.t(s)
   }
   implicitHeight: body.implicitHeight + Style.space(root.departure.notices.length > 0 ? 15 : 20)
   radius: Style.cornerRadius * 2

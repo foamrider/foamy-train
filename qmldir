@@ -1,0 +1,14 @@
+singleton FoamyI18n 1.0 FoamyI18n.qml
+DepartureCard 1.0 DepartureCard.qml
+Notice 1.0 Notice.qml
+Panel 1.0 Panel.qml
+ScheduleDay 1.0 ScheduleDay.qml
+SettingsPane 1.0 SettingsPane.qml
+StationSearch 1.0 StationSearch.qml
+TrainAction 1.0 TrainAction.qml
+TrainBar 1.0 TrainBar.qml
+TrainDropdown 1.0 TrainDropdown.qml
+TrainIcon 1.0 TrainIcon.qml
+TrainPopup 1.0 TrainPopup.qml
+TrainText 1.0 TrainText.qml
+TrainView 1.0 TrainView.qml

@@ -28,7 +28,7 @@ function minutes(d,now) { return Math.max(0,Math.ceil((d.expected-now)/60)) }
 function durationParts(totalMinutes, language) {
   var total = Math.max(0, Math.floor(totalMinutes)), hours = Math.floor(total / 60), minutes = total % 60
   var parts = []
-  if (hours) parts.push({value:hours, unit:language === "nb" ? "t" : "h"})
+  if (hours) parts.push({value:hours, unit:language === "no" ? "t" : "h"})
   if (minutes || !hours) parts.push({value:minutes, unit:"min"})
   return parts
 }

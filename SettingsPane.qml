@@ -30,7 +30,7 @@ Column {
   signal back
   signal clearError
   function tr(label) {
-    return Preferences.text(label, language)
+    return FoamyI18n.t(label)
   }
   function focusBack() {
     backButton.forceActiveFocus()

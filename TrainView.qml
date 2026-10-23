@@ -29,7 +29,7 @@ Column {
   signal swapRequested
   signal refreshRequested
   function tr(s) {
-    return Preferences.text(s, language)
+    return FoamyI18n.t(s)
   }
   spacing: 0
   Rectangle {
@@ -359,7 +359,7 @@ Column {
         Layout.fillWidth: true
         horizontalAlignment: Text.AlignRight
         visible: root.report.updatedAt > 0
-        text: Preferences.updatedText(root.report.updatedAt, root.nowEpoch, root.language)
+        text: Preferences.updatedText(root.report.updatedAt, root.nowEpoch, root.tr)
         color: root.secondary
         font.pixelSize: Style.space(11)
       }

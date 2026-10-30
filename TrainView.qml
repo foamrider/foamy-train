@@ -236,14 +236,6 @@ Column {
     }
   }
 
-  // With no details below, a strip of plain surface keeps the band's square
-  // bottom off the card's rounded corners (the band rounds only its top).
-  Item {
-    visible: !details.visible
-    width: parent.width
-    height: FoamyStyle.radius
-  }
-
   Column {
     id: details
     objectName: "departureDetails"

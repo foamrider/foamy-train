@@ -29,9 +29,16 @@ CACHE_SECONDS = 30
 # holds fewer than MAX_DEPARTURES direct trains (sparse routes, late evening).
 # Busy routes fill the list from the short window, so Entur plans a few hours
 # instead of a whole day on most polls. A route that needed the full window
-# keeps using it for WIDE_REUSE_SECONDS before the short window is tried again.
+# keeps using it for WIDE_REUSE_SECONDS, counted from when it first widened
+# (`wideSince`), before the short window is tried again.
 FIRST_WINDOW_HOURS = 3
 WIDE_REUSE_SECONDS = 3600
+# The widget kills the helper after 18 s (`timeout 18s`). All journey-planner
+# requests of one fetch share this budget, so a slow widening can never cost
+# the short window's answer; a widening needs at least WIDEN_MIN_SECONDS.
+REQUEST_TIMEOUT = 12
+FETCH_BUDGET_SECONDS = 14
+WIDEN_MIN_SECONDS = 4
 OSLO = ZoneInfo("Europe/Oslo")
 NOTICE_FIELDS = """id reportType summary { language value } description { language value }
  advice { language value } affects { __typename
@@ -113,11 +120,11 @@ def route_identity(route: dict) -> str:
     return route["from"]["id"] + "/" + route["to"]["id"]
 
 
-def request_json(url: str, payload: dict | None = None) -> dict:
+def request_json(url: str, payload: dict | None = None, timeout: float = REQUEST_TIMEOUT) -> dict:
     body = json.dumps(payload).encode() if payload is not None else None
     request = Request(url, data=body, headers={"ET-Client-Name": CLIENT, "Accept": "application/json", "Content-Type": "application/json"})
     try:
-        with urlopen(request, timeout=12) as response:
+        with urlopen(request, timeout=timeout) as response:
             data = response.read(MAX_BYTES + 1)
         if len(data) > MAX_BYTES:
             raise ValueError("Response too large")
@@ -305,11 +312,20 @@ def valid_snapshot(value: object, route: dict, now: int) -> bool:
                and n.get("kind") in ("info", "warning") for n in all_notices)
 
 
+def wide_since(cached: dict | None, look_ahead_hours: int, now: int) -> int | None:
+    # When the full window was first chosen, while that choice is still within WIDE_REUSE_SECONDS.
+    if cached is None or cached.get("searchHours") != look_ahead_hours:
+        return None
+    since = cached.get("wideSince")
+    if type(since) is not int or not 0 <= now - since < WIDE_REUSE_SECONDS:
+        return None
+    return since
+
+
 def search_windows(look_ahead_hours: int, cached: dict | None, now: int) -> list[int]:
     if look_ahead_hours <= FIRST_WINDOW_HOURS:
         return [look_ahead_hours]
-    recent = cached is not None and now - cached["updatedAt"] < WIDE_REUSE_SECONDS
-    if recent and cached.get("searchHours") == look_ahead_hours:
+    if wide_since(cached, look_ahead_hours, now) is not None:
         return [look_ahead_hours]
     return [FIRST_WINDOW_HOURS, look_ahead_hours]
 
@@ -342,15 +358,21 @@ def fetch(route: dict | None, language: str, force: bool = False, offline: bool 
         if offline:
             raise TrainError("offline", "Offline. Showing the last available update.")
         report = None
+        deadline = time.monotonic() + FETCH_BUDGET_SECONDS
         for hours in search_windows(look_ahead_hours, cached, now):
+            remaining = deadline - time.monotonic()
+            if report is not None and remaining < WIDEN_MIN_SECONDS:
+                break
             try:
-                candidate = parse_response(request_json(API, {"query": QUERY, "variables": {"from": route["from"]["id"], "to": route["to"]["id"], "searchWindow": hours * 60}}), route, language, now, look_ahead_hours)
+                candidate = parse_response(request_json(API, {"query": QUERY, "variables": {"from": route["from"]["id"], "to": route["to"]["id"], "searchWindow": hours * 60}}, timeout=max(1.0, min(REQUEST_TIMEOUT, remaining))), route, language, now, look_ahead_hours)
             except TrainError:
                 # A failed widening keeps the short window's departures.
                 if report is None:
                     raise
                 break
             candidate["searchHours"] = hours
+            if hours == look_ahead_hours and hours > FIRST_WINDOW_HOURS:
+                candidate["wideSince"] = wide_since(cached, look_ahead_hours, now) or now
             report = candidate
             if len(report["departures"]) >= MAX_DEPARTURES:
                 break

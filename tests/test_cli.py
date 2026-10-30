@@ -34,11 +34,22 @@ class CliTests(unittest.TestCase):
                 self.assertFalse(Path(env[key]).exists())
 
     def test_search_query_starting_with_a_dash_is_not_an_option(self):
-        # `--search=<text>` (as the widget passes it) keeps "-x" a query; it is too short to send.
-        result = subprocess.run([sys.executable, str(HELPER), "--search=-x"], capture_output=True, text=True, timeout=5)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), {"status": "ok", "stations": []})
-
+        # `--search=<text>` (as the widget passes it) keeps "-x" a query, not an option.
+        # In-process with the network boundary mocked: no live Entur request.
+        import contextlib
+        import importlib.util
+        import io
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location("train_fetch_cli", HELPER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        feature = {"properties": {"id": "NSR:StopPlace:9", "names": {"default": "-x Junction"}, "stopPlaceTypes": ["railStation"]}}
+        output = io.StringIO()
+        with patch.object(module, "request_json", return_value={"features": [feature]}) as request, \
+                patch.object(sys, "argv", ["train_fetch.py", "--search=-x"]), contextlib.redirect_stdout(output):
+            module.main()
+        self.assertIn("q=-x", request.call_args.args[0])
+        self.assertEqual(json.loads(output.getvalue())["stations"][0]["name"], "-x Junction")
 
 if __name__ == "__main__":
     unittest.main()

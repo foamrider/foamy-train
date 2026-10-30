@@ -184,19 +184,53 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(report["searchHours"], train.FIRST_WINDOW_HOURS)
 
     def test_sparse_route_reuses_the_full_window_for_an_hour(self):
+        windows = lambda request: [c.args[1]["variables"]["searchWindow"] for c in request.call_args_list]
         with patch.object(train, "request_json", return_value=response(leg())) as request:
             with patch.object(train.time, "time", return_value=NOW):
                 train.fetch(ROUTE, "en", force=True)
             with patch.object(train.time, "time", return_value=NOW + 600):
                 train.fetch(ROUTE, "en", force=True)
-            self.assertEqual([c.args[1]["variables"]["searchWindow"] for c in request.call_args_list], [180, 1440, 1440])
-            with patch.object(train.time, "time", return_value=NOW + 600 + train.WIDE_REUSE_SECONDS):
+            self.assertEqual(windows(request), [180, 1440, 1440])
+            # Continuous polling refreshes updatedAt, but the hour counts from the first widening.
+            for minutes in range(20, 60, 10):
+                with patch.object(train.time, "time", return_value=NOW + minutes * 60):
+                    train.fetch(ROUTE, "en", force=True)
+            self.assertEqual(windows(request)[3:], [1440] * 4)
+            with patch.object(train.time, "time", return_value=NOW + train.WIDE_REUSE_SECONDS):
                 train.fetch(ROUTE, "en", force=True)
-            self.assertEqual(request.call_args_list[3].args[1]["variables"]["searchWindow"], 180)
+            self.assertEqual(windows(request)[7:], [180, 1440])
+            with patch.object(train.time, "time", return_value=NOW + train.WIDE_REUSE_SECONDS + 600):
+                report = train.fetch(ROUTE, "en", force=True)
+            self.assertEqual(windows(request)[9:], [1440])
+            self.assertEqual(report["wideSince"], NOW + train.WIDE_REUSE_SECONDS)
+
+    def test_requests_share_one_budget_inside_the_widget_timeout(self):
+        clock = [1000.0]
+        timeouts = []
+        def slow(url, payload, timeout):
+            timeouts.append(timeout)
+            clock[0] += 11
+            return response(leg())
+        with patch.object(train.time, "time", return_value=NOW), patch.object(train.time, "monotonic", side_effect=lambda: clock[0]), \
+                patch.object(train, "request_json", side_effect=slow):
+            report = train.fetch(ROUTE, "en", force=True)
+        # 11 s for the short window leaves too little to widen: keep its answer instead of being killed.
+        self.assertEqual(timeouts, [train.REQUEST_TIMEOUT])
+        self.assertEqual((report["status"], len(report["departures"]), report["searchHours"]), ("ok", 1, train.FIRST_WINDOW_HOURS))
+        clock[0], timeouts[:] = 1000.0, []
+        def medium(url, payload, timeout):
+            timeouts.append(timeout)
+            clock[0] += 6
+            return response(leg())
+        with patch.object(train.time, "time", return_value=NOW + 3 * train.WIDE_REUSE_SECONDS), patch.object(train.time, "monotonic", side_effect=lambda: clock[0]), \
+                patch.object(train, "request_json", side_effect=medium):
+            train.fetch(ROUTE, "en", force=True)
+        self.assertEqual(timeouts, [train.REQUEST_TIMEOUT, train.FETCH_BUDGET_SECONDS - 6])
+        self.assertLess(train.FETCH_BUDGET_SECONDS + 2, 18, "helper budget plus startup fits timeout 18s")
 
     def test_failed_widening_keeps_the_short_window(self):
         calls = iter([response(leg()), train.TrainError("network_error", "Unavailable")])
-        def answer(*_):
+        def answer(*_, **__):
             value = next(calls)
             if isinstance(value, Exception):
                 raise value

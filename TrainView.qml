@@ -23,11 +23,6 @@ Column {
   // Expanded notice keys (notice detail shown).
   property var expanded: ({})
 
-  // The hero countdown is the plugin's one display numeral; FoamyStyle's
-  // type scale stops at 28 (kit issue filed for a display numeral token).
-  readonly property int heroNumber: Style.space(52)
-  readonly property int heroTime: Style.space(46)
-  readonly property int heroUnit: Style.space(20)
 
   readonly property var following: departures.filter(function(d) { return !root.next || d.id !== root.next.id })
   readonly property bool paused: outsideSchedule
@@ -135,7 +130,7 @@ Column {
           TrainText {
             visible: root.stale
             text: root.next ? root.next.expectedTime : ""
-            font.pixelSize: root.heroTime
+            font.pixelSize: FoamyStyle.font.numeralCompact
             font.weight: Font.Light
             wrapMode: Text.NoWrap
           }
@@ -147,13 +142,13 @@ Column {
               TrainText {
                 id: amount
                 text: root.formatNumber(parent.modelData.value)
-                font.pixelSize: root.heroNumber
+                font.pixelSize: FoamyStyle.font.numeral
                 font.weight: Font.Light
                 wrapMode: Text.NoWrap
               }
               TrainText {
                 text: parent.modelData.unit
-                font.pixelSize: root.heroUnit
+                font.pixelSize: FoamyStyle.font.display
                 anchors.baseline: amount.baseline
                 wrapMode: Text.NoWrap
               }

@@ -41,7 +41,7 @@ Row {
     id: trainGlyph
     width: Style.bar.iconCanvas
     height: width
-    text: "󰔬"
+    text: "\u{f052c}"
     fontFamily: root.iconFontFamily
     fontSize: Style.font.body
     color: root.vertical && root.live && root.noticeIcon !== "" ? root.noticeColor(root.noticeIcon) : root.foreground
@@ -64,7 +64,8 @@ Row {
     anchors.verticalCenterOffset: -Style.space(1)
     width: trainGlyph.fontSize
     height: width
-    name: root.noticeIcon || "info"
+    // noticeIcon is the notice kind; information uses the megaphone shape.
+    name: root.noticeIcon === "info" || root.noticeIcon === "" ? "megaphone" : root.noticeIcon
     color: root.noticeColor(root.noticeIcon)
   }
 }

@@ -4,7 +4,6 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "kit"
-import "kit/FoamyPrefs.js" as Prefs
 import "Preferences.js" as Schema
 import "Schedule.js" as Schedule
 import "Model.js" as Model
@@ -21,26 +20,45 @@ Panel {
   readonly property bool vertical: bar && (bar.position === "left" || bar.position === "right")
   readonly property color foreground: bar ? bar.barForeground : Commons.Color.foreground
   function preference(key) {
-    return Prefs.value(Schema.fields, settings, key)
+    return prefs.value(key)
   }
-  readonly property string configuredRoute: JSON.stringify(settings && settings.route !== undefined ? settings.route : null)
+  // The station pair is an object field: Model.route() validates it.
+  readonly property var fields: Schema.fields.concat([{
+    key: "route", type: "object", defaultValue: null,
+    validate: function(value) {
+      try {
+        return Model.route(value) !== null || "Select both stations from search results."
+      } catch (error) {
+        return error.message
+      }
+    }
+  }])
+  // Saved values show at once, before the host reflects them back.
+  readonly property var effectiveSettings: prefs.effectiveSettings
+  readonly property string configuredRoute: JSON.stringify(effectiveSettings && effectiveSettings.route !== undefined ? effectiveSettings.route : null)
   readonly property var config: ({
     routeJson: configuredRoute,
     lookAheadHours: preference("lookAheadHours"),
     refreshSeconds: preference("refreshSeconds"),
     scheduleEnabled: preference("scheduleEnabled"),
-    week: Schedule.week(settings || ({})),
+    week: Schedule.week(effectiveSettings || ({})),
     language: FoamyI18n.language
   })
 
-  property bool editingSettings: false
-  property string settingsError: ""
-  property var lastSave: null
-  property var queuedSaves: []
-  property string savingKey: ""
-  readonly property bool saving: saveProcess.running
-  readonly property bool routeSaving: saveProcess.running && savingKey === "route"
+  readonly property alias editingSettings: settingsState.editing
+  readonly property string settingsError: prefs.error !== "" ? FoamyI18n.t(prefs.error) : ""
+  readonly property bool saving: prefs.busy
+  readonly property bool routeSaving: prefs.busy
   readonly property alias popup: popup
+
+  FoamySettingsState { id: settingsState; panel: root }
+  FoamyPrefsQueue {
+    id: prefs
+    bar: root.bar
+    moduleName: root.moduleName
+    fields: root.fields
+    settings: root.settings
+  }
 
   FoamyMember {
     id: member
@@ -59,96 +77,27 @@ Panel {
   implicitHeight: button.implicitHeight
 
   function openSettings() {
-    editingSettings = true
-    open()
+    settingsState.show()
   }
   function closeSettings() {
-    editingSettings = false
+    settingsState.hide()
   }
   function swapDirection() {
     var current = TrainService.route
     if (current && !routeSaving) save("route", { from: current.to, to: current.from })
   }
-
-  // The station pair is an object, which FoamyPrefs' schema types don't
-  // cover: validate it with Model.route() and save it the same way (inline
-  // first, else `omarchy bar set … --json`).
-  function routeSave(next) {
-    var result = { ok: false, changed: false, inline: false, command: [], settings: null, error: "" }
-    if (!root.moduleName) {
-      result.error = "Settings can't be saved: this widget has no bar entry."
-      return result
-    }
-    try {
-      next = Model.route(next)
-    } catch (error) {
-      result.error = error.message
-      return result
-    }
-    if (!next) {
-      result.error = "Select both stations from search results."
-      return result
-    }
-    result.settings = Prefs.merged(root.settings, "route", next)
-    result.ok = true
-    if (JSON.stringify(root.settings ? root.settings.route : null) === JSON.stringify(next)) return result
-    result.changed = true
-    if (Prefs.canSaveInline(root.bar)) {
-      try {
-        if (root.bar.shell.updateEntryInline(String(root.moduleName), result.settings) === true) {
-          result.inline = true
-          return result
-        }
-      } catch (error) {
-        console.warn("foamy.train: inline save failed, using omarchy bar set:", error)
-      }
-    }
-    result.command = Prefs.saveCommand(root.moduleName, "route", next)
-    return result
-  }
-
   function save(key, next) {
-    settingsError = ""
-    lastSave = { key: key, value: next }
-    var result = key === "route" ? routeSave(next) : Prefs.save(root.bar, root.moduleName, Schema.fields, root.settings, key, next)
-    if (!result.ok) {
-      settingsError = FoamyI18n.t(result.error)
-      return
+    // Store the normalized pair (trimmed names, no search labels).
+    if (key === "route") {
+      try { next = Model.route(next) } catch (error) {}
     }
-    if (result.command.length === 0) {
-      lastSave = null
-      return
-    }
-    queuedSaves = queuedSaves.concat([{ key: key, command: result.command }])
-    flushSaves()
+    prefs.save(key, next)
   }
   function retrySave() {
-    if (lastSave) save(lastSave.key, lastSave.value)
-  }
-  // CLI saves run one at a time, in order.
-  function flushSaves() {
-    if (saveProcess.running || queuedSaves.length === 0) return
-    var nextSave = queuedSaves[0]
-    queuedSaves = queuedSaves.slice(1)
-    savingKey = nextSave.key
-    saveProcess.command = nextSave.command
-    saveProcess.running = true
+    prefs.retry()
   }
 
-  Process {
-    id: saveProcess
-    onExited: function(code) {
-      if (code !== 0) root.settingsError = FoamyI18n.t("Couldn't save the setting.")
-      else if (root.queuedSaves.length === 0) root.lastSave = null
-      root.savingKey = ""
-      Qt.callLater(root.flushSaves)
-    }
-  }
-
-  onOpenedChanged: {
-    if (!opened) editingSettings = false
-    else TrainService.refresh(false, true)
-  }
+  onOpenedChanged: if (opened) TrainService.refresh(false, true)
 
   FoamyIpc {
     target: "foamy.train"
@@ -216,13 +165,13 @@ Panel {
         offline: !TrainService.networkReady
         outsideSchedule: !TrainService.withinSchedule
         route: TrainService.route
-        settings: root.settings
+        settings: root.effectiveSettings
         helperPath: TrainService.helperPath
         editingSettings: root.editingSettings
         saving: root.saving
         routeSaving: root.routeSaving
         settingsError: root.settingsError
-        retryable: root.lastSave !== null && root.settingsError !== ""
+        retryable: prefs.canRetry
         onCloseRequestedByView: root.editingSettings ? root.closeSettings() : root.close()
         onSettingsRequested: root.openSettings()
         onSettingsClosed: root.closeSettings()

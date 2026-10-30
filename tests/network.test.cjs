@@ -32,17 +32,19 @@ function timer() {
 function fixture(lock) {
   const c = controller({ active: true, configured: true, sessionLocked: false, withinSchedule: true, demanded: false,
     networkReady: false, networkRetries: 0, networkRetry: timer(), pollTimer: timer(), canPoll: false, pollInterval: 60,
-    statusProcess: { running: false }, lockProcess: { running: false }, generation: 7,
+    statusProcess: { running: false }, generation: 7,
     route: { from: { id: "NSR:StopPlace:1", name: "One" }, to: { id: "NSR:StopPlace:2", name: "Two" } },
     helperPath: "/fixture/train.py", language: "en", lookAheadHours: 24, lastAttempt: 0,
     lockProbeAvailable: true, lockInProcess: false, lockProbeFailures: 0, lockForce: false,
     pendingRefresh: false, pendingForce: false, lockGeneration: 0, Math, JSON, String, Date,
     Qt: { callLater() {} }, drainRefresh() {},
-    IpcResolver: { registry: () => lock === undefined ? null : { call: (t, m, a) => {
+    IpcResolver: { call: (context, t, m, a) => {
       assert.equal(JSON.stringify([t, m, a]), JSON.stringify(["lock", "isLocked", []]));
-      return lock === null ? { ran: false } : { ran: true, output: String(lock) };
-    } } },
-  }, ["canFetch", "refresh", "fetch", "lockProbeDone", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed"]);
+      return lock === undefined || lock === null ? { ran: false } : { ran: true, output: String(lock) };
+    } },
+    lockProbing: false,
+    peer: { calls: [], call(t, m, a, done) { this.calls.push([t, m, a]); this.done = done; } },
+  }, ["canFetch", "refresh", "fetch", "lockProbeDone", "startLockProbe", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed"]);
   return c;
 }
 test("offline startup loads cache only; the route goes to stdin, never argv", () => {
@@ -77,11 +79,12 @@ test("a popup open or explicit refresh skips the probe and clears the lock", () 
   assert.equal(c.sessionLocked, false);
   assert.equal(c.statusProcess.running, true);
 });
-test("without an in-process answer the omarchy-shell probe runs first", () => {
+test("without an in-process answer the FoamyPeerIpc (omarchy-shell) probe runs first", () => {
   for (const lock of [undefined, null]) {
     const c = fixture(lock); c.networkReady = true;
     c.refresh(true, false);
-    assert.equal(c.lockProcess.running, true);
+    assert.equal(c.lockProbing, true);
+    assert.equal(JSON.stringify(c.peer.calls), JSON.stringify([["lock", "isLocked", []]]));
     assert.equal(c.lockForce, true);
     assert.equal(c.statusProcess.running, false);
   }
@@ -122,18 +125,19 @@ test("an omarchy-shell probe that finishes after polling stopped does not fetch"
                          c => { c.route = null; }, c => { c.generation++; }]) {
     const c = fixture(null); c.networkReady = true;
     c.refresh(false, false);
-    assert.equal(c.lockProcess.running, true);
-    c.lockProcess.running = false;
+    assert.equal(c.lockProbing, true);
+    assert.equal(JSON.stringify(c.peer.calls), JSON.stringify([["lock", "isLocked", []]]));
+    c.lockProbing = false;
     change(c);
     c.lockProbeDone(0, "false\n");
     assert.equal(c.statusProcess.running, false, change.toString());
   }
   const c = fixture(null); c.networkReady = true;
-  c.refresh(false, false); c.lockProcess.running = false;
+  c.refresh(false, false); c.lockProbing = false;
   c.lockProbeDone(0, "false\n");
   assert.equal(c.statusProcess.running, true, "unchanged state still fetches");
   const locked = fixture(null); locked.networkReady = true;
-  locked.refresh(false, false); locked.lockProcess.running = false;
+  locked.refresh(false, false); locked.lockProbing = false;
   locked.lockProbeDone(0, "true");
   assert.equal(locked.sessionLocked, true);
   assert.equal(locked.statusProcess.running, false);
@@ -147,4 +151,12 @@ test("every reconnection waits out the network settle delay", () => {
   // Handlers are not functions; check the declaration the singleton relies on.
   assert.match(qml, /onNetworkConnectedChanged:\s*networkSettled = false/);
   assert.match(qml, /running: root\.networkConnected && !root\.networkSettled/);
+});
+test("the peer probe's answer feeds lockProbeDone", () => {
+  const c = fixture(null); c.networkReady = true;
+  c.refresh(false, false);
+  c.peer.done(true, "true");
+  assert.equal(c.lockProbing, false);
+  assert.equal(c.sessionLocked, true);
+  assert.equal(c.statusProcess.running, false);
 });

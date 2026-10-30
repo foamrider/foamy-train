@@ -67,6 +67,7 @@ RowLayout {
     enabled: root.dayEnabled
     opacity: enabled ? 1 : FoamyStyle.disabledOpacity
     horizontalAlignment: Text.AlignHCenter
+    maximumLength: 5
     translate: FoamyI18n.t
     Accessible.name: root.label + " · " + root.fromLabel
     onEditingFinished: root.saveInputs()
@@ -84,6 +85,7 @@ RowLayout {
     enabled: root.dayEnabled
     opacity: enabled ? 1 : FoamyStyle.disabledOpacity
     horizontalAlignment: Text.AlignHCenter
+    maximumLength: 5
     translate: FoamyI18n.t
     Accessible.name: root.label + " · " + root.toLabel
     onEditingFinished: root.saveInputs()

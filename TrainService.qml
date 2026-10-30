@@ -152,7 +152,7 @@ QtObject {
 
   function refresh(force, present) {
     if (!canFetch()) return
-    if (statusProcess.running || lockProcess.running) {
+    if (statusProcess.running || lockProbing) {
       pendingRefresh = true
       pendingForce = pendingForce || force
       return
@@ -164,7 +164,7 @@ QtObject {
       if (locked === null) {
         lockForce = force
         lockGeneration = generation
-        lockProcess.running = true
+        startLockProbe()
         return
       }
       if (lockAnswered(locked)) return
@@ -174,10 +174,8 @@ QtObject {
 
   // true/false from the shell's own IpcRegistry (4.5), or null when it can't tell.
   function lockedInProcess() {
-    var registry = IpcResolver.registry(root)
-    if (!registry || typeof registry.call !== "function") return null
-    var answer = registry.call("lock", "isLocked", [])
-    if (!answer || !answer.ran) return null
+    var answer = IpcResolver.call(root, "lock", "isLocked", [])
+    if (!answer.ran) return null
     lockInProcess = true
     return String(answer.output).trim() === "true"
   }
@@ -269,7 +267,6 @@ QtObject {
   onActiveChanged: if (!active) {
     generation++
     pendingRefresh = false
-    lockProcess.running = false
     pollTimer.stop()
     networkRetry.stop()
     statusProcess.running = false
@@ -287,10 +284,7 @@ QtObject {
     pendingRefresh = false
     pendingForce = false
     if (withinSchedule) refresh(true, false)
-    else {
-      statusProcess.running = false
-      lockProcess.running = false
-    }
+    else statusProcess.running = false
   }
   onSessionLockedChanged: if (!sessionLocked) resetNetworkRetry()
 
@@ -302,12 +296,16 @@ QtObject {
     onTriggered: root.refresh(true, false)
   }
 
-  property Process lockProcess: Process {
-    command: ["timeout", "--kill-after=1s", "3s", "omarchy-shell", "lock", "isLocked"]
-    stdout: StdioCollector { id: lockOutput; waitForEnd: true }
-    onExited: function(code) {
-      root.lockProbeDone(code, lockOutput.text)
-    }
+  // Fallback lock probe (4.0, or a lock handler outside IpcRegistry):
+  // FoamyPeerIpc runs a bounded `omarchy-shell lock isLocked`.
+  property bool lockProbing: false
+  property FoamyPeerIpc peer: FoamyPeerIpc {}
+  function startLockProbe() {
+    lockProbing = true
+    peer.call("lock", "isLocked", [], function(ok, output) {
+      root.lockProbing = false
+      root.lockProbeDone(ok ? 0 : 1, output)
+    })
   }
 
   property Process statusProcess: Process {

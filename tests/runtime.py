@@ -85,10 +85,10 @@ ShellRoot {
         if (s.loading) { shell.step--; break }
         s.refresh(false, false)
         check(!s.sessionLocked, "unlocked session polls again")
-        check(s.statusProcess.running || s.lockProcess.running, "a request starts after unlock")
+        check(s.statusProcess.running || s.lockProbing, "a request starts after unlock")
         break
       case 3:
-        if (s.loading || s.lockProcess.running) { shell.step--; break }
+        if (s.loading || s.lockProbing) { shell.step--; break }
         var argv = s.statusProcess.command.join(" ")
         check(argv.indexOf("--route-stdin") >= 0 && argv.indexOf("NSR:") < 0 && argv.indexOf("Oslo") < 0, "route is not in argv")
         check(s.report.route && s.report.route.to.name === "Lillestrøm", "helper received the route on stdin (" + s.report.status + "/" + s.report.errorCode + ")")

@@ -41,7 +41,8 @@ FoamyCursorSurface {
         Layout.alignment: Qt.AlignVCenter
         Layout.preferredWidth: FoamyStyle.iconSize
         Layout.preferredHeight: FoamyStyle.iconSize
-        name: root.cancelled && root.notice.kind === "warning" ? "cancelled" : root.notice.kind
+        // Information notices keep the announcement (megaphone) shape.
+        name: root.notice.kind === "info" ? "megaphone" : root.cancelled ? "cancelled" : "warning"
         color: root.notice.kind === "info" ? Commons.Color.accent
                : root.cancelled ? Commons.Color.urgent : FoamyPalette.onSurface(FoamyPalette.warning)
       }

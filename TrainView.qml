@@ -48,7 +48,7 @@ Column {
     if (report.route) list.push("swap")
     list.push("settings")
     if (unconfigured) list.push("choose")
-    if (!paused) {
+    if (!paused && !unconfigured) {
       if (next) list = list.concat(noticeStops("next/", next.notices))
       list = list.concat(noticeStops("route/", report.routeNotices))
       following.forEach(function(d) { list = list.concat(root.noticeStops("dep/" + d.id + "/", d.notices)) })
@@ -80,6 +80,9 @@ Column {
   Rectangle {
     width: parent.width
     height: header.height + hero.implicitHeight + FoamyStyle.padding
+    // Rounded at the bottom too when it is the whole card.
+    bottomLeftRadius: details.visible ? 0 : topLeftRadius
+    bottomRightRadius: bottomLeftRadius
     color: Qt.alpha(FoamyPalette.text, 0.045)
     topLeftRadius: FoamyStyle.innerRadius(FoamyStyle.radius, FoamyStyle.borderWidth)
     topRightRadius: topLeftRadius
@@ -240,7 +243,8 @@ Column {
   Column {
     id: details
     objectName: "departureDetails"
-    visible: !root.paused
+    // Nothing to refresh before stations are chosen.
+    visible: !root.paused && !root.unconfigured
     width: parent.width
     padding: FoamyStyle.padding
     spacing: FoamyStyle.font.heading
@@ -378,7 +382,6 @@ Column {
       TrainText {
         Layout.fillWidth: true
         horizontalAlignment: Text.AlignRight
-        visible: root.report.updatedAt > 0
         text: root.report.updatedAt > 0 ? root.updatedText() : ""
         color: FoamyPalette.secondaryText
         font.pixelSize: FoamyStyle.font.bodySmall

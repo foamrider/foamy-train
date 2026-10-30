@@ -146,10 +146,10 @@ class StorageTests(unittest.TestCase):
             train.fetch(ROUTE, "en", look_ahead_hours=1)
             self.assertEqual(request.call_args.args[1]["variables"]["searchWindow"], 60)
             train.fetch(ROUTE, "en", look_ahead_hours=24)
-            self.assertEqual(request.call_count, 2)
-            self.assertEqual(request.call_args.args[1]["variables"]["searchWindow"], 1440)
+            # One train in the short window: widen to the full day.
+            self.assertEqual([c.args[1]["variables"]["searchWindow"] for c in request.call_args_list[1:]], [180, 1440])
             train.fetch(ROUTE, "en", look_ahead_hours=24)
-            self.assertEqual(request.call_count, 2)
+            self.assertEqual(request.call_count, 3)
         self.assertNotEqual(train.cache_path(ROUTE, "en", 1), train.cache_path(ROUTE, "en", 24))
 
     def test_invalid_hours_are_rejected_before_network_or_cache(self):
@@ -170,6 +170,55 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(train.fetch(ROUTE, "en")["status"], "ok")
         with patch.object(train.time, "time", return_value=NOW+86401):
             self.assertEqual(train.fetch(ROUTE, "en", offline=True)["status"], "error")
+
+    def busy(self):
+        return response(*[leg(id=f"t{i}", serviceJourney={"id": f"sj{i}"}, aimedStartTime=f"2026-09-26T09:{10 + i * 5}:00+02:00",
+                              expectedStartTime=f"2026-09-26T09:{10 + i * 5}:00+02:00") for i in range(7)])
+
+    def test_busy_route_needs_only_the_short_window(self):
+        with patch.object(train.time, "time", return_value=NOW), patch.object(train, "request_json", return_value=self.busy()) as request:
+            report = train.fetch(ROUTE, "en", force=True)
+        self.assertEqual(request.call_count, 1)
+        self.assertEqual(request.call_args.args[1]["variables"]["searchWindow"], train.FIRST_WINDOW_HOURS * 60)
+        self.assertEqual(len(report["departures"]), train.MAX_DEPARTURES)
+        self.assertEqual(report["searchHours"], train.FIRST_WINDOW_HOURS)
+
+    def test_sparse_route_reuses_the_full_window_for_an_hour(self):
+        with patch.object(train, "request_json", return_value=response(leg())) as request:
+            with patch.object(train.time, "time", return_value=NOW):
+                train.fetch(ROUTE, "en", force=True)
+            with patch.object(train.time, "time", return_value=NOW + 600):
+                train.fetch(ROUTE, "en", force=True)
+            self.assertEqual([c.args[1]["variables"]["searchWindow"] for c in request.call_args_list], [180, 1440, 1440])
+            with patch.object(train.time, "time", return_value=NOW + 600 + train.WIDE_REUSE_SECONDS):
+                train.fetch(ROUTE, "en", force=True)
+            self.assertEqual(request.call_args_list[3].args[1]["variables"]["searchWindow"], 180)
+
+    def test_failed_widening_keeps_the_short_window(self):
+        calls = iter([response(leg()), train.TrainError("network_error", "Unavailable")])
+        def answer(*_):
+            value = next(calls)
+            if isinstance(value, Exception):
+                raise value
+            return value
+        with patch.object(train.time, "time", return_value=NOW), patch.object(train, "request_json", side_effect=answer):
+            report = train.fetch(ROUTE, "en", force=True)
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(len(report["departures"]), 1)
+
+    def test_read_route_is_bounded(self):
+        import io
+        stream = io.TextIOWrapper(io.BytesIO(json.dumps(ROUTE).encode()))
+        self.assertEqual(train.read_route(stream), ROUTE)
+        with self.assertRaises(train.TrainError):
+            train.read_route(io.TextIOWrapper(io.BytesIO(b" " * (train.MAX_ROUTE_BYTES + 1))))
+
+    def test_search_labels_are_one_bounded_line(self):
+        feature = {"properties": {"id": "NSR:StopPlace:12", "names": {"default": "Central", "display": "Central,\n" + "x" * 400}, "stopPlaceTypes": ["railStation"]}}
+        with patch.object(train, "request_json", return_value={"features": [feature]}):
+            label = train.search("Central")[0]["label"]
+        self.assertEqual(len(label), train.MAX_LABEL)
+        self.assertNotIn("\n", label)
 
     def test_search_validates_and_deduplicates_stations(self):
         good = {"properties": {"id": "NSR:StopPlace:12", "names": {"default": "Central", "display": "Central, City"}, "stopPlaceTypes": ["railStation"]}}

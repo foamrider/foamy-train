@@ -21,7 +21,17 @@ API = "https://api.entur.io/journey-planner/v3/graphql"
 GEOCODER = "https://api.entur.io/geocoder/v3/autocomplete"
 CLIENT = "foamrider-foamy-train"
 MAX_BYTES = 2_000_000
+MAX_ROUTE_BYTES = 4096
+MAX_LABEL = 160
+MAX_DEPARTURES = 6
 CACHE_SECONDS = 30
+# Search a short window first and widen to the full look-ahead only when it
+# holds fewer than MAX_DEPARTURES direct trains (sparse routes, late evening).
+# Busy routes fill the list from the short window, so Entur plans a few hours
+# instead of a whole day on most polls. A route that needed the full window
+# keeps using it for WIDE_REUSE_SECONDS before the short window is tried again.
+FIRST_WINDOW_HOURS = 3
+WIDE_REUSE_SECONDS = 3600
 OSLO = ZoneInfo("Europe/Oslo")
 NOTICE_FIELDS = """id reportType summary { language value } description { language value }
  advice { language value } affects { __typename
@@ -146,9 +156,15 @@ def search(query: str) -> list[dict]:
         if item["id"] in seen:
             continue
         seen.add(item["id"])
-        item["label"] = str(names.get("display") or item["name"])
+        item["label"] = label(names.get("display"), item["name"])
         results.append(item)
     return results
+
+
+def label(value: object, fallback: str) -> str:
+    # Entur's display label is free text: one line, bounded like station names.
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", value).strip() if isinstance(value, str) else ""
+    return (text or fallback)[:MAX_LABEL]
 
 
 def localized(values: object, language: str) -> str:
@@ -249,7 +265,7 @@ def parse_response(data: dict, route: dict, language: str, now: int, look_ahead_
                 "platform": str((start.get("quay") or {}).get("publicCode") or "—"),
                 "realtime": start.get("realtime") is True, "cancelled": cancelled, "notices": local_notices})
         departures.sort(key=lambda d: (d["expected"], d["aimed"]))
-        return {"status": "ok", "route": route, "departures": departures[:6], "routeNotices": route_notices,
+        return {"status": "ok", "route": route, "departures": departures[:MAX_DEPARTURES], "routeNotices": route_notices,
                 "updatedAt": now, "stale": False, "error": "", "errorCode": ""}
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         raise TrainError("invalid_response", "Entur returned an invalid response. Try Refresh.") from error
@@ -289,6 +305,23 @@ def valid_snapshot(value: object, route: dict, now: int) -> bool:
                and n.get("kind") in ("info", "warning") for n in all_notices)
 
 
+def search_windows(look_ahead_hours: int, cached: dict | None, now: int) -> list[int]:
+    if look_ahead_hours <= FIRST_WINDOW_HOURS:
+        return [look_ahead_hours]
+    recent = cached is not None and now - cached["updatedAt"] < WIDE_REUSE_SECONDS
+    if recent and cached.get("searchHours") == look_ahead_hours:
+        return [look_ahead_hours]
+    return [FIRST_WINDOW_HOURS, look_ahead_hours]
+
+
+def read_route(stream) -> dict:
+    # The station pair arrives on stdin so a commute never shows up in argv.
+    data = stream.buffer.read(MAX_ROUTE_BYTES + 1)
+    if len(data) > MAX_ROUTE_BYTES:
+        raise TrainError("invalid_route", "Select both stations from search results.")
+    return validate_route(json.loads(data))
+
+
 def fetch(route: dict | None, language: str, force: bool = False, offline: bool = False, look_ahead_hours: int = 24) -> dict:
     if type(look_ahead_hours) is not int or not 1 <= look_ahead_hours <= 24:
         raise TrainError("invalid_setting", "Choose between 1 and 24 hours.")
@@ -308,7 +341,19 @@ def fetch(route: dict | None, language: str, force: bool = False, offline: bool 
     try:
         if offline:
             raise TrainError("offline", "Offline. Showing the last available update.")
-        report = parse_response(request_json(API, {"query": QUERY, "variables": {"from": route["from"]["id"], "to": route["to"]["id"], "searchWindow": look_ahead_hours * 60}}), route, language, now, look_ahead_hours)
+        report = None
+        for hours in search_windows(look_ahead_hours, cached, now):
+            try:
+                candidate = parse_response(request_json(API, {"query": QUERY, "variables": {"from": route["from"]["id"], "to": route["to"]["id"], "searchWindow": hours * 60}}), route, language, now, look_ahead_hours)
+            except TrainError:
+                # A failed widening keeps the short window's departures.
+                if report is None:
+                    raise
+                break
+            candidate["searchHours"] = hours
+            report = candidate
+            if len(report["departures"]) >= MAX_DEPARTURES:
+                break
         try:
             atomic_json(path, report)
         except OSError:
@@ -324,7 +369,7 @@ def fetch(route: dict | None, language: str, force: bool = False, offline: bool 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--search")
-    parser.add_argument("--route", help="Station pair from the widget entry in shell.json (JSON)")
+    parser.add_argument("--route-stdin", action="store_true", help="Read the station pair (JSON from the widget entry in shell.json) from stdin")
     parser.add_argument("--language", choices=("en", "nb"), default="en")
     parser.add_argument("--hours", type=int, choices=range(1, 25), default=24, help="Look ahead 1–24 hours")
     parser.add_argument("--force", action="store_true")
@@ -334,7 +379,7 @@ def main() -> None:
         if args.search is not None:
             result = {"status": "ok", "stations": search(args.search)}
         else:
-            route = validate_route(json.loads(args.route)) if args.route is not None else None
+            route = read_route(sys.stdin) if args.route_stdin else None
             result = fetch(route, args.language, args.force, args.offline, args.hours)
     except TrainError as error:
         result = dict(empty("error"), error=str(error), errorCode=error.code)

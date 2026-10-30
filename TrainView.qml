@@ -63,6 +63,14 @@ Column {
   signal stopHovered(string key)
   signal revealRequested(Item item)
 
+  // Header and footer stops scroll into view here; notices reveal themselves.
+  onCursorKeyChanged: {
+    var item = cursorKey === "swap" || cursorKey === "settings" ? header
+      : cursorKey === "choose" ? chooseAction
+      : cursorKey === "refresh" ? refreshAction : null
+    if (item) revealRequested(item)
+  }
+
   function toggle(key) {
     var state = Object.assign({}, expanded)
     state[key] = !state[key]
@@ -227,6 +235,7 @@ Column {
           text: FoamyI18n.t("Choose two stations to see direct trains.")
         }
         FoamyAction {
+          id: chooseAction
           visible: root.unconfigured
           anchors.horizontalCenter: parent.horizontalCenter
           iconName: "settings"
@@ -395,7 +404,6 @@ Column {
         spinning: root.loading
         actionEnabled: !root.loading && !root.routeBusy
         hasCursor: root.cursorKey === "refresh"
-        onHasCursorChanged: if (hasCursor) root.revealRequested(refreshAction)
         onHoveredChanged: if (hovered) root.stopHovered("refresh")
         onClicked: root.refreshRequested()
       }

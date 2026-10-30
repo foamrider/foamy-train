@@ -29,6 +29,7 @@ import Quickshell.Io
 import qs.Commons
 import "harness"
 import "plugin" as Train
+import "plugin/tests/Fixtures.js" as Fixtures
 
 ShellRoot {
   id: shell
@@ -44,6 +45,19 @@ ShellRoot {
     visible: true; implicitWidth: 300; implicitHeight: 60
     Train.Panel { id: a; bar: bar; moduleName: "foamy.train"; settings: shell.entry; width: 100; height: 32 }
     Train.Panel { id: b; bar: bar; moduleName: "foamy.train"; settings: shell.entry; x: 140; width: 100; height: 32 }
+  }
+  // A body taller than its viewport: cursor stops must scroll into view.
+  FloatingWindow {
+    visible: true; implicitWidth: 420; implicitHeight: 300
+    Train.TrainBody {
+      id: body
+      width: 420; height: 300
+      report: Fixtures.report("normal")
+      nowEpoch: Fixtures.now
+      departures: report.departures
+      next: report.departures[0]
+      route: Fixtures.route
+    }
   }
   Timer {
     interval: 400; repeat: true; running: true
@@ -99,6 +113,13 @@ ShellRoot {
         break
       case 5:
         check(!s.demanded, "demand drops when the popup closes")
+        check(body.scroller.contentHeight > body.scroller.height + 100, "fixture body overflows its viewport")
+        body.moveRequested(0, -1)
+        check(body.cursorKey === "refresh" && body.scroller.contentY > 0, "cursor on Refresh scrolls to the footer")
+        body.moveRequested(0, -1)
+        check(body.cursorKey === "settings" && body.scroller.contentY === 0, "cursor back on Settings scrolls the header into view")
+        body.moveRequested(0, 1); body.moveRequested(0, -1); body.moveRequested(0, -1)
+        check(body.cursorKey === "swap" && body.scroller.contentY === 0, "cursor on Switch direction keeps the header visible")
         console.log("FOAMY DONE")
         Qt.quit()
       }

@@ -80,6 +80,9 @@ PanelKeyCatcher {
   }
   onVisibleChanged: if (!visible) cursor.reset()
 
+  // The departures scroller (tests check that cursor stops stay visible).
+  readonly property Flickable scroller: scroll
+
   Flickable {
     id: scroll
     visible: !root.editingSettings

@@ -51,6 +51,8 @@ QtObject {
     || Networking.connectivity === NetworkConnectivity.Limited
   property bool networkSettled: false
   readonly property bool networkReady: networkConnected && networkSettled
+  // Every (re)connection waits out the settle delay, not just the first.
+  onNetworkConnectedChanged: networkSettled = false
   // NetworkManager can report a connection before DNS and routes are usable.
   property Timer settleTimer: Timer {
     interval: 2000
@@ -77,6 +79,9 @@ QtObject {
   property bool lockProbeAvailable: true
   property int lockProbeFailures: 0
   property bool lockForce: false
+  // generation when the omarchy-shell probe started; a newer one (route,
+  // schedule, network or membership change) discards the probe's fetch.
+  property int lockGeneration: 0
   readonly property int lockProbeSeconds: lockInProcess ? 10 : 60
 
   readonly property int pollInterval: Model.pollInterval(refreshSeconds, {
@@ -139,8 +144,14 @@ QtObject {
 
   // force skips the helper's 30 s cache; present means someone is at the
   // screen (popup opened, Refresh, IPC), so the lock probe is skipped.
+  // Fetching is allowed: some bar shows the widget, a route is set and the
+  // schedule is on. Checked again after every asynchronous step.
+  function canFetch() {
+    return active && configured && withinSchedule && !!route
+  }
+
   function refresh(force, present) {
-    if (!active || !configured || !withinSchedule || !route) return
+    if (!canFetch()) return
     if (statusProcess.running || lockProcess.running) {
       pendingRefresh = true
       pendingForce = pendingForce || force
@@ -152,6 +163,7 @@ QtObject {
       var locked = lockedInProcess()
       if (locked === null) {
         lockForce = force
+        lockGeneration = generation
         lockProcess.running = true
         return
       }
@@ -180,6 +192,22 @@ QtObject {
     return true
   }
 
+  // The omarchy-shell probe finished. Polling may have been switched off
+  // meanwhile (schedule ended, last bar gone, route replaced): fetch only if
+  // nothing changed and fetching is still allowed.
+  function lockProbeDone(code, output) {
+    var answer = String(output || "").trim()
+    var locked = false
+    if (code === 0 && (answer === "true" || answer === "false")) {
+      lockProbeFailures = 0
+      locked = lockAnswered(answer === "true")
+    } else {
+      lockProbeFailed()
+    }
+    if (!locked && lockGeneration === generation && canFetch()) fetch(lockForce)
+    Qt.callLater(root.drainRefresh)
+  }
+
   function lockProbeFailed() {
     // No lock service answers: stop asking after a few tries and poll as usual.
     if (++lockProbeFailures >= 3) lockProbeAvailable = false
@@ -187,6 +215,7 @@ QtObject {
   }
 
   function fetch(force) {
+    if (!canFetch()) return
     requestedGeneration = generation
     requestOffline = !networkReady
     lastAttempt = Date.now() / 1000
@@ -238,6 +267,9 @@ QtObject {
   onCanPollChanged: schedule()
   onPollIntervalChanged: schedule()
   onActiveChanged: if (!active) {
+    generation++
+    pendingRefresh = false
+    lockProcess.running = false
     pollTimer.stop()
     networkRetry.stop()
     statusProcess.running = false
@@ -255,7 +287,10 @@ QtObject {
     pendingRefresh = false
     pendingForce = false
     if (withinSchedule) refresh(true, false)
-    else statusProcess.running = false
+    else {
+      statusProcess.running = false
+      lockProcess.running = false
+    }
   }
   onSessionLockedChanged: if (!sessionLocked) resetNetworkRetry()
 
@@ -271,15 +306,7 @@ QtObject {
     command: ["timeout", "--kill-after=1s", "3s", "omarchy-shell", "lock", "isLocked"]
     stdout: StdioCollector { id: lockOutput; waitForEnd: true }
     onExited: function(code) {
-      var answer = lockOutput.text.trim()
-      if (code === 0 && (answer === "true" || answer === "false")) {
-        root.lockProbeFailures = 0
-        if (!root.lockAnswered(answer === "true")) root.fetch(root.lockForce)
-      } else {
-        root.lockProbeFailed()
-        root.fetch(root.lockForce)
-      }
-      Qt.callLater(root.drainRefresh)
+      root.lockProbeDone(code, lockOutput.text)
     }
   }
 

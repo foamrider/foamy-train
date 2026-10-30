@@ -36,12 +36,13 @@ function fixture(lock) {
     route: { from: { id: "NSR:StopPlace:1", name: "One" }, to: { id: "NSR:StopPlace:2", name: "Two" } },
     helperPath: "/fixture/train.py", language: "en", lookAheadHours: 24, lastAttempt: 0,
     lockProbeAvailable: true, lockInProcess: false, lockProbeFailures: 0, lockForce: false,
-    pendingRefresh: false, pendingForce: false, Math, JSON, String, Date,
+    pendingRefresh: false, pendingForce: false, lockGeneration: 0, Math, JSON, String, Date,
+    Qt: { callLater() {} }, drainRefresh() {},
     IpcResolver: { registry: () => lock === undefined ? null : { call: (t, m, a) => {
       assert.equal(JSON.stringify([t, m, a]), JSON.stringify(["lock", "isLocked", []]));
       return lock === null ? { ran: false } : { ran: true, output: String(lock) };
     } } },
-  }, ["refresh", "fetch", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed"]);
+  }, ["canFetch", "refresh", "fetch", "lockProbeDone", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed"]);
   return c;
 }
 test("offline startup loads cache only; the route goes to stdin, never argv", () => {
@@ -115,4 +116,35 @@ test("the poll timer waits for the rest of the current interval", () => {
   assert.equal(c.pollTimer.interval, 1000, "an overdue poll runs at once");
   c.canPoll = false; c.schedule();
   assert.equal(c.pollTimer.running, false);
+});
+test("an omarchy-shell probe that finishes after polling stopped does not fetch", () => {
+  for (const change of [c => { c.withinSchedule = false; c.generation++; }, c => { c.active = false; c.generation++; },
+                         c => { c.route = null; }, c => { c.generation++; }]) {
+    const c = fixture(null); c.networkReady = true;
+    c.refresh(false, false);
+    assert.equal(c.lockProcess.running, true);
+    c.lockProcess.running = false;
+    change(c);
+    c.lockProbeDone(0, "false\n");
+    assert.equal(c.statusProcess.running, false, change.toString());
+  }
+  const c = fixture(null); c.networkReady = true;
+  c.refresh(false, false); c.lockProcess.running = false;
+  c.lockProbeDone(0, "false\n");
+  assert.equal(c.statusProcess.running, true, "unchanged state still fetches");
+  const locked = fixture(null); locked.networkReady = true;
+  locked.refresh(false, false); locked.lockProcess.running = false;
+  locked.lockProbeDone(0, "true");
+  assert.equal(locked.sessionLocked, true);
+  assert.equal(locked.statusProcess.running, false);
+});
+test("fetch itself refuses when polling is off", () => {
+  const c = fixture(false); c.withinSchedule = false;
+  c.fetch(true);
+  assert.equal(c.statusProcess.running, false);
+});
+test("every reconnection waits out the network settle delay", () => {
+  // Handlers are not functions; check the declaration the singleton relies on.
+  assert.match(qml, /onNetworkConnectedChanged:\s*networkSettled = false/);
+  assert.match(qml, /running: root\.networkConnected && !root\.networkSettled/);
 });

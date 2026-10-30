@@ -60,7 +60,7 @@ Column {
 
   // Header and footer stops scroll into view here; notices reveal themselves.
   onCursorKeyChanged: {
-    var item = cursorKey === "swap" || cursorKey === "settings" ? header
+    var item = cursorKey === "swap" || cursorKey === "settings" ? band
       : cursorKey === "choose" ? chooseAction
       : cursorKey === "refresh" ? refreshAction : null
     if (item) revealRequested(item)
@@ -80,25 +80,17 @@ Column {
 
   spacing: 0
 
-  Rectangle {
+  FoamyHeroBand {
+    id: band
+    objectName: "heroBand"
     width: parent.width
-    height: header.height + hero.implicitHeight + FoamyStyle.padding
-    // Rounded at the bottom too when it is the whole card.
-    bottomLeftRadius: details.visible ? 0 : topLeftRadius
-    bottomRightRadius: bottomLeftRadius
-    color: Qt.alpha(FoamyPalette.text, 0.045)
-    topLeftRadius: FoamyStyle.innerRadius(FoamyStyle.radius, FoamyStyle.borderWidth)
-    topRightRadius: topLeftRadius
-
-    FoamyHeader {
-      id: header
-      width: parent.width
-      iconName: "train"
-      title: FoamyI18n.t("Trains")
-      meta: root.report.route ? FoamyI18n.t("%1 → %2", [root.report.route.from.name, root.report.route.to.name]) : ""
-      settingsHasCursor: root.cursorKey === "settings"
-      onSettingsClicked: root.settingsRequested()
-      onSettingsHovered: function(hovered) { if (hovered) root.stopHovered("settings") }
+    iconName: "train"
+    title: FoamyI18n.t("Trains")
+    meta: root.report.route ? FoamyI18n.t("%1 → %2", [root.report.route.from.name, root.report.route.to.name]) : ""
+    settingsHasCursor: root.cursorKey === "settings"
+    onSettingsClicked: root.settingsRequested()
+    onSettingsHovered: function(hovered) { if (hovered) root.stopHovered("settings") }
+    trailing: [
       FoamyAction {
         objectName: "directionAction"
         visible: !!root.report.route
@@ -110,19 +102,19 @@ Column {
         onHoveredChanged: if (hovered) root.stopHovered("swap")
         onClicked: root.swapRequested()
       }
-    }
+    ]
 
+    // Hero: the next departure (countdown, destination, line and time), or
+    // the empty / paused state.
     Column {
       id: hero
-      anchors.top: header.bottom
-      x: FoamyStyle.padding
-      width: parent.width - FoamyStyle.padding * 2
+      Layout.fillWidth: true
       spacing: FoamyStyle.gap
 
       Column {
         visible: !!root.next && !root.paused
         width: parent.width
-        spacing: FoamyStyle.rowPadding
+        spacing: FoamyStyle.gapSmall
         Row {
           objectName: "heroCountdown"
           anchors.horizontalCenter: parent.horizontalCenter
@@ -159,7 +151,7 @@ Column {
           width: parent.width
           horizontalAlignment: Text.AlignHCenter
           text: root.report.route ? FoamyI18n.t(root.stale ? "Last known to" : "Next to") + " " + root.report.route.to.name : ""
-          font.pixelSize: FoamyStyle.font.iconLarge
+          font.pixelSize: FoamyStyle.font.heading
         }
         Row {
           anchors.horizontalCenter: parent.horizontalCenter
@@ -194,11 +186,11 @@ Column {
       Column {
         visible: !root.next || root.paused
         width: parent.width
-        spacing: FoamyStyle.gapLarge
+        spacing: FoamyStyle.gap
         FoamyIcon {
           objectName: root.paused ? "sleepIcon" : "emptyIcon"
           anchors.horizontalCenter: parent.horizontalCenter
-          width: Style.space(32)
+          width: Style.space(28)
           height: width
           name: root.paused ? "moon" : "train"
           color: FoamyPalette.secondaryText
@@ -244,6 +236,14 @@ Column {
     }
   }
 
+  // With no details below, a strip of plain surface keeps the band's square
+  // bottom off the card's rounded corners (the band rounds only its top).
+  Item {
+    visible: !details.visible
+    width: parent.width
+    height: FoamyStyle.radius
+  }
+
   Column {
     id: details
     objectName: "departureDetails"
@@ -251,6 +251,7 @@ Column {
     visible: !root.paused && !root.unconfigured
     width: parent.width
     padding: FoamyStyle.padding
+    topPadding: FoamyStyle.sectionGap
     spacing: FoamyStyle.font.heading
     readonly property real innerWidth: width - padding * 2
 

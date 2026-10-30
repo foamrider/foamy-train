@@ -1,299 +1,167 @@
 import QtQuick
-import QtQuick.Controls as Controls
-import Quickshell
 import Quickshell.Io
-import Quickshell.Networking
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
-import "Preferences.js" as Preferences
+import "kit"
+import "kit/FoamyPrefs.js" as Prefs
+import "Preferences.js" as Schema
 import "Schedule.js" as Schedule
 import "Model.js" as Model
 
+// One bar instance (4.5 draws one per monitor). Data, polling and the lock
+// probe live in the TrainService singleton; the leader instance configures it
+// and owns the IPC target. Every instance shows the bar countdown and its own
+// popup, and any instance can save settings.
 Panel {
   id: root
-  moduleName: "foamy.train"
   ipcTarget: "foamy.train"
   manageIpc: false
+
   readonly property bool vertical: bar && (bar.position === "left" || bar.position === "right")
-  readonly property color foreground: bar ? bar.barForeground : Color.foreground
-  readonly property string helperPath: decodeURIComponent(Qt.resolvedUrl("train_fetch.py").toString().replace(
-                                                            /^file:\/\//, ""))
-  readonly property var lockService: bar?.shell?.firstPartyServiceFor("omarchy.lock")
-  readonly property bool sessionLocked: lockService ? lockService.locked === true : false
-  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full
-    || Networking.connectivity === NetworkConnectivity.Limited
-  property bool networkSettled: false
-  readonly property bool networkReady: networkConnected && networkSettled
-  onNetworkConnectedChanged: networkSettled = false
-  Timer {
-    // NetworkManager can report a connection before DNS and routes are usable.
-    interval: 2000
-    running: root.networkConnected && !root.networkSettled
-    onTriggered: root.networkSettled = true
-  }
+  readonly property color foreground: bar ? bar.barForeground : Commons.Color.foreground
   function preference(key) {
-    return Preferences.value(settings, key)
+    return Prefs.value(Schema.fields, settings, key)
   }
-  readonly property int lookAheadHours: preference("lookAheadHours")
-  onLookAheadHoursChanged: if (initialized) syncRoute()
-  readonly property string language: FoamyI18n.language
-  function tr(s) {
-    return FoamyI18n.t(s)
-  }
-  property var report: Model.blank("loading")
-  property bool initialized: false
+  readonly property string configuredRoute: JSON.stringify(settings && settings.route !== undefined ? settings.route : null)
+  readonly property var config: ({
+    routeJson: configuredRoute,
+    lookAheadHours: preference("lookAheadHours"),
+    refreshSeconds: preference("refreshSeconds"),
+    scheduleEnabled: preference("scheduleEnabled"),
+    week: Schedule.week(settings || ({})),
+    language: FoamyI18n.language
+  })
+
   property bool editingSettings: false
   property string settingsError: ""
-  property var pendingPreferences: ({})
-  property bool routeSaving: false
+  property var lastSave: null
+  property var queuedSaves: []
   property string savingKey: ""
-  readonly property string configuredRoute: JSON.stringify(settings.route === undefined ? null : settings.route)
-  onConfiguredRouteChanged: if (initialized) syncRoute()
-  Component.onCompleted: { initialized = true; syncRoute() }
-  function syncRoute() {
-    resetNetworkRetry()
-    // shell.json is authoritative; discard results for a route that was replaced externally.
-    generation++
-    statusProcess.running = false
-    pendingRefresh = false
-    pendingForce = false
-    try {
-      var route = Model.route(settings.route)
-      report = Object.assign(Model.blank(route ? "ready" : "unconfigured"), {route:route})
-    } catch (error) {
-      report = Object.assign(Model.blank("error"), {error:error.message})
-    }
-    settingsPane.resetRoute()
-    if (report.route) refresh(true)
-  }
-  property int generation: 0
-  property int requestedGeneration: 0
-  property bool pendingRefresh: false
-  property bool pendingForce: false
-  property bool requestOffline: false
-  property int networkRetries: 0
-  function resetNetworkRetry() {
-    networkRetry.stop()
-    networkRetries = 0
-  }
-  function retryNetworkRequest() {
-    if (!networkReady || sessionLocked || !withinSchedule || networkRetries >= 3) return
-    // Bound startup recovery without overlapping the existing serialized worker.
-    networkRetry.interval = 2500 * Math.pow(2, networkRetries++)
-    networkRetry.restart()
-  }
-  Timer {
-    id: networkRetry
-    onTriggered: root.refresh(true)
-  }
-  SystemClock {
-    id: clock
-    precision: SystemClock.Seconds
-  }
-  readonly property real nowEpoch: clock.date.getTime() / 1000
-  readonly property bool withinSchedule: Schedule.withinWeek(clock.date, preference("scheduleEnabled"), Schedule.week(
-                                                               settings))
+  readonly property bool saving: saveProcess.running
+  readonly property bool routeSaving: saveProcess.running && savingKey === "route"
+  readonly property alias popup: popup
 
-  readonly property bool stale: Model.stale(report, nowEpoch, !networkReady)
-  readonly property var departures: Model.upcoming(report, nowEpoch, stale)
-  readonly property var next: Model.next(departures)
-  readonly property bool alert: withinSchedule && !stale && (departures.some(function (d) {
-    return d.cancelled || d.delay > 0 || d.notices.some(function (n) {
-      return n.kind === "warning"
-    })
-  }) || report.routeNotices.some(function (n) {
-    return n.kind === "warning"
-  }))
-  visible: opened || withinSchedule || preference("scheduleOutsideMode") !== "hide" || !report.route
+  FoamyMember {
+    id: member
+    scope: TrainService.memberScope
+    demanding: root.opened
+    onIsLeaderChanged: root.pushConfig()
+  }
+  onConfigChanged: pushConfig()
+  Component.onCompleted: pushConfig()
+  function pushConfig() {
+    if (member.isLeader) TrainService.configure(config)
+  }
+
+  visible: opened || TrainService.withinSchedule || preference("scheduleOutsideMode") !== "hide" || !TrainService.route
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  function savePreference(key, value) {
-    if (!Preferences.valid(key, value)) {
-      settingsError = tr("Invalid setting.")
-      return
-    }
-    settingsError = ""
-    pendingPreferences[key] = value
-    flushPreferences()
-  }
-  function flushPreferences() {
-    if (preferencesSave.running)
-      return
-    var keys = Object.keys(pendingPreferences)
-    if (!keys.length)
-      return
-    var key = keys[0], value = pendingPreferences[key]
-    delete pendingPreferences[key]
-    savingKey = key
-    preferencesSave.command = ["omarchy-shell", "shell", "setBarWidget", moduleName, key, " " + JSON.stringify(value),
-                               "{}"]
-    preferencesSave.running = true
-  }
   function openSettings() {
     editingSettings = true
-    settingsPane.resetRoute()
     open()
-    panelScroll.contentY = 0
-    Qt.callLater(function () {
-      settingsPane.focusBack()
-    })
   }
   function closeSettings() {
     editingSettings = false
-    panelScroll.contentY = 0
-    Qt.callLater(function () {
-      view.settingsTarget.forceActiveFocus()
-    })
   }
-  function changeRoute(route) {
-    if (routeSaving) return
-    settingsError = ""
+  function swapDirection() {
+    var current = TrainService.route
+    if (current && !routeSaving) save("route", { from: current.to, to: current.from })
+  }
+
+  // The station pair is an object, which FoamyPrefs' schema types don't
+  // cover: validate it with Model.route() and save it the same way (inline
+  // first, else `omarchy bar set … --json`).
+  function routeSave(next) {
+    var result = { ok: false, changed: false, inline: false, command: [], settings: null, error: "" }
+    if (!root.moduleName) {
+      result.error = "Settings can't be saved: this widget has no bar entry."
+      return result
+    }
     try {
-      var nextRoute = Model.route(route || (report.route ? {from:report.route.to,to:report.route.from} : null))
-      if (!nextRoute) return
-      generation++
-      // Persist both endpoints in one shell setting and serialize with other preference writes.
-      routeSaving = true
-      pendingPreferences.route = nextRoute
-      flushPreferences()
-    } catch (error) {settingsError = tr(error.message)}
-  }
-  function refresh(force) {
-    if (!initialized || sessionLocked || !withinSchedule || !report.route)
-      return
-    if (statusProcess.running || root.routeSaving) {
-      pendingRefresh = true
-      pendingForce = pendingForce || force
-      return
+      next = Model.route(next)
+    } catch (error) {
+      result.error = error.message
+      return result
     }
-    requestedGeneration = generation
-    requestOffline = !networkReady
-    statusProcess.command = ["timeout", "--kill-after=2s", "18s", "python3", helperPath, "--language", language === "no" ? "nb" : "en", "--hours", String(lookAheadHours), "--route", JSON.stringify(report.route)].concat(force
-                                                                                                                        ? ["--force"] :
-                                                                                                                          []).concat(
-          requestOffline ? ["--offline"] : [])
-    statusProcess.running = true
-  }
-  function fail(message) {
-    var updated = Object.assign({}, report)
-    updated.status = report.updatedAt ? "stale" : "error"
-    updated.stale = !!report.updatedAt
-    updated.error = message
-    report = updated
-  }
-  function drainRefresh() {
-    if (pendingRefresh) {
-      var force = pendingForce
-      pendingRefresh = false
-      pendingForce = false
-      refresh(force)
+    if (!next) {
+      result.error = "Select both stations from search results."
+      return result
     }
-  }
-  Process {
-    id: preferencesSave
-    stdout: StdioCollector {
-      id: saveOutput
-      waitForEnd: true
-    }
-    onExited: function (code) {
-      if (code !== 0 || saveOutput.text.trim() !== "ok")
-        root.settingsError = root.tr("Could not save settings.")
-      if (root.savingKey === "route") root.routeSaving = false
-      Qt.callLater(root.flushPreferences)
-      Qt.callLater(root.drainRefresh)
-    }
-  }
-  Process {
-    id: statusProcess
-    objectName: "departureProcess"
-    stdout: StdioCollector {
-      id: statusOutput
-      waitForEnd: true
-    }
-    onExited: function (code) {
+    result.settings = Prefs.merged(root.settings, "route", next)
+    result.ok = true
+    if (JSON.stringify(root.settings ? root.settings.route : null) === JSON.stringify(next)) return result
+    result.changed = true
+    if (Prefs.canSaveInline(root.bar)) {
       try {
-        if (root.requestedGeneration !== root.generation)
-          return
-        if (code !== 0) {
-          root.fail("Train request failed. Try Refresh.")
-          root.retryNetworkRequest()
-          return
+        if (root.bar.shell.updateEntryInline(String(root.moduleName), result.settings) === true) {
+          result.inline = true
+          return result
         }
-        root.report = Model.parse(statusOutput.text)
-        if (["network_error", "http_error"].indexOf(root.report.errorCode) >= 0)
-          root.retryNetworkRequest()
-        else root.resetNetworkRetry()
-      } catch (e) {
-        root.fail("Invalid train response.")
-      } finally {
-        Qt.callLater(root.drainRefresh)
+      } catch (error) {
+        console.warn("foamy.train: inline save failed, using omarchy bar set:", error)
       }
     }
+    result.command = Prefs.saveCommand(root.moduleName, "route", next)
+    return result
   }
-  Timer {
-    interval: root.preference("refreshSeconds") * 1000
-    running: root.initialized && root.networkReady && !root.sessionLocked && root.withinSchedule
-    repeat: true
-    onTriggered: root.refresh(false)
+
+  function save(key, next) {
+    settingsError = ""
+    lastSave = { key: key, value: next }
+    var result = key === "route" ? routeSave(next) : Prefs.save(root.bar, root.moduleName, Schema.fields, root.settings, key, next)
+    if (!result.ok) {
+      settingsError = FoamyI18n.t(result.error)
+      return
+    }
+    if (result.command.length === 0) {
+      lastSave = null
+      return
+    }
+    queuedSaves = queuedSaves.concat([{ key: key, command: result.command }])
+    flushSaves()
   }
-  onNetworkReadyChanged: if (initialized) {
-                           resetNetworkRetry()
-                           generation++
-                           refresh(true)
-                         }
-  onLanguageChanged: if (initialized) {
-                       generation++
-                       refresh(true)
-                     }
-  onWithinScheduleChanged: {
-    if (!initialized) return
-    resetNetworkRetry()
-    // Leaving the schedule cancels work and invalidates any already queued response.
-    generation++
-    pendingRefresh = false
-    pendingForce = false
-    if (withinSchedule) refresh(true)
-    else statusProcess.running = false
+  function retrySave() {
+    if (lastSave) save(lastSave.key, lastSave.value)
   }
-  onSessionLockedChanged: {
-    resetNetworkRetry()
-    if (initialized && !sessionLocked) refresh(false)
+  // CLI saves run one at a time, in order.
+  function flushSaves() {
+    if (saveProcess.running || queuedSaves.length === 0) return
+    var nextSave = queuedSaves[0]
+    queuedSaves = queuedSaves.slice(1)
+    savingKey = nextSave.key
+    saveProcess.command = nextSave.command
+    saveProcess.running = true
   }
-  onOpenedChanged: {
-    panelScroll.contentY = 0
-    if (!opened)
-      editingSettings = false
-    else {
-      refresh(false)
-      Qt.callLater(function () {
-        if (!root.editingSettings)
-          panelScroll.forceActiveFocus()
-      })
+
+  Process {
+    id: saveProcess
+    onExited: function(code) {
+      if (code !== 0) root.settingsError = FoamyI18n.t("Couldn't save the setting.")
+      else if (root.queuedSaves.length === 0) root.lastSave = null
+      root.savingKey = ""
+      Qt.callLater(root.flushSaves)
     }
   }
-  IpcHandler {
+
+  onOpenedChanged: {
+    if (!opened) editingSettings = false
+    else TrainService.refresh(false, true)
+  }
+
+  FoamyIpc {
     target: "foamy.train"
-    function open(): void {
-    root.open()
+    enabled: member.isLeader
+    function open(): void { root.open() }
+    function close(): void { root.close() }
+    function toggle(): void { root.toggle() }
+    function settings(): void { root.openSettings() }
+    function refresh(): void { TrainService.refresh(true, true) }
+    function swap(): void { root.swapDirection() }
+    function status(): string { return JSON.stringify(TrainService.statusObject()) }
   }
-    function close(): void {
-                        root.close()
-                      }
-    function toggle(): void {
-    root.toggle()
-  }
-    function settings(): void {
-                           root.openSettings()
-                         }
-    function refresh(): void {
-    root.refresh(true)
-  }
-    function swap(): void {
-                       if (root.report.route)
-                       root.changeRoute(null)
-                     }
-  }
+
   WidgetButton {
     id: button
     anchors.fill: parent
@@ -301,16 +169,13 @@ Panel {
     text: ""
     labelVisible: false
     hasVisualContent: true
-    active: root.alert
-    activeColor: Color.urgent
-    dimmed: !root.withinSchedule || root.stale || !root.next
-    fixedWidth: root.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot
-                                              - Style.bar.iconCanvas)
-    tooltipText: root.tr("Trains") + (root.report.route ? " · " + root.report.route.from.name + " → "
-                                                          + root.report.route.to.name : "") + (root.stale ? " · "
-                                                                                                            + root.tr(
-                                                                                                              "Cached times; live predictions unavailable.") :
-                                                                                                            "")
+    active: TrainService.alert
+    activeColor: Commons.Color.urgent
+    dimmed: !TrainService.withinSchedule || TrainService.stale || !TrainService.next
+    fixedWidth: root.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
+    tooltipText: FoamyI18n.t("Trains")
+      + (TrainService.route ? " · " + FoamyI18n.t("%1 → %2", [TrainService.route.from.name, TrainService.route.to.name]) : "")
+      + (TrainService.stale ? " · " + FoamyI18n.t("Cached times; live predictions unavailable.") : "")
     TrainBar {
       id: barContent
       anchors.centerIn: parent
@@ -318,103 +183,54 @@ Panel {
       iconFontFamily: button.fontFamily
       fontSize: button.fontSize
       showMinutes: root.preference("showBarMinutes")
-      language: root.language
-      withinSchedule: root.withinSchedule
+      language: FoamyI18n.language
+      withinSchedule: TrainService.withinSchedule
       vertical: root.vertical
-      stale: root.stale
-      next: root.next
-      departures: root.departures
-      routeNotices: root.report.routeNotices
-      nowEpoch: root.nowEpoch
+      stale: TrainService.stale
+      next: TrainService.next
+      departures: TrainService.departures
+      routeNotices: TrainService.report.routeNotices
+      nowEpoch: TrainService.nowEpoch
     }
-    onPressed: function (b) {
-      if (b === Qt.RightButton)
-        root.openSettings()
-      else
-        root.toggle()
+    onPressed: function(b) {
+      if (b === Qt.RightButton) root.openSettings()
+      else root.toggle()
     }
   }
-  TrainPopup {
-    id: panel
+
+  FoamyPopup {
+    id: popup
     anchorItem: button
-    owner: root
     bar: root.bar
+    owner: root
     open: root.opened
-    focusTarget: root.editingSettings ? settingsPane.backTarget : panelScroll
-    padding: 0
-    borderSpec: Border.flat(Qt.alpha(Color.popups.text, 0.15), 1)
-    contentWidth: panel.fittedContentWidth(Style.space(480))
-    contentHeight: panel.fittedContentHeight(Math.min(Style.space(820), root.editingSettings
-                                                      ? settingsPane.implicitHeight : view.implicitHeight))
-    Flickable {
-      id: panelScroll
-      anchors.fill: parent
-      clip: true
-      contentWidth: width
-      contentHeight: root.editingSettings ? settingsPane.implicitHeight : view.implicitHeight
-      boundsBehavior: Flickable.StopAtBounds
-      flickableDirection: Flickable.VerticalFlick
-      onContentHeightChanged: contentY = Math.max(0, Math.min(contentY, contentHeight - height))
-      onHeightChanged: contentY = Math.max(0, Math.min(contentY, contentHeight - height))
-      Keys.onEscapePressed: root.editingSettings ? root.closeSettings() : root.close()
-      Keys.onPressed: function (event) {
-        if (!root.editingSettings && event.key === Qt.Key_R) {
-          root.refresh(true)
-          event.accepted = true
-        }
-      }
-      Connections {
-        target: panelScroll.Window.window
-        function onActiveFocusItemChanged() {
-          var item = target.activeFocusItem
-          if (!item)
-            return
-          var point = item.mapToItem(panelScroll.contentItem, 0, 0)
-          if (point.y < panelScroll.contentY)
-            panelScroll.contentY = Math.max(0, point.y - Style.space(8))
-          else if (point.y + item.height > panelScroll.contentY + panelScroll.height)
-            panelScroll.contentY = Math.max(0, Math.min(panelScroll.contentHeight - panelScroll.height, point.y + item.height
-                                                        - panelScroll.height + Style.space(8)))
-        }
-      }
-      Controls.ScrollBar.vertical: Controls.ScrollBar {
-        policy: Controls.ScrollBar.AsNeeded
-      }
-      SettingsPane {
-        id: settingsPane
-        visible: root.editingSettings
-        width: panelScroll.width
-        route: root.report.route
+    body: Component {
+      TrainBody {
+        report: TrainService.report
+        nowEpoch: TrainService.nowEpoch
+        stale: TrainService.stale
+        departures: TrainService.departures
+        next: TrainService.next
+        language: FoamyI18n.language
+        loading: TrainService.loading
+        offline: !TrainService.networkReady
+        outsideSchedule: !TrainService.withinSchedule
+        route: TrainService.route
         settings: root.settings
-        language: root.language
-        helperPath: root.helperPath
-        saving: preferencesSave.running
+        helperPath: TrainService.helperPath
+        editingSettings: root.editingSettings
+        saving: root.saving
         routeSaving: root.routeSaving
-        error: root.settingsError
-        onSave: function (key, value) {
-          root.savePreference(key, value)
-        }
-        onApplyRoute: function (route) {
-          root.changeRoute(route)
-        }
-        onClearError: root.settingsError = ""
-        onBack: root.closeSettings()
-      }
-      TrainView {
-        id: view
-        cornerRadius: Math.max(0, panel.cornerRadius - Border.top(panel.borderSpec))
-        visible: !root.editingSettings
-        width: panelScroll.width
-        report: root.report
-        nowEpoch: root.nowEpoch
-        language: root.language
-        loading: statusProcess.running
-        offline: !root.networkReady
-        outsideSchedule: !root.withinSchedule
-        routeBusy: root.routeSaving
+        settingsError: root.settingsError
+        retryable: root.lastSave !== null && root.settingsError !== ""
+        onCloseRequestedByView: root.editingSettings ? root.closeSettings() : root.close()
         onSettingsRequested: root.openSettings()
-        onSwapRequested: root.changeRoute(null)
-        onRefreshRequested: root.refresh(true)
+        onSettingsClosed: root.closeSettings()
+        onRefreshRequested: TrainService.refresh(true, true)
+        onSwapRequested: root.swapDirection()
+        onSaveRequested: function(key, value) { root.save(key, value) }
+        onRetryRequested: root.retrySave()
+        onSwitchPanelRequested: function(direction) { root.switchPanel(direction) }
       }
     }
   }

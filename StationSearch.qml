@@ -1,9 +1,12 @@
 import QtQuick
-import QtQuick.Controls as Controls
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
+import "kit"
 import "Model.js" as Model
 
+// Station search for the settings page: a SafeTextField (bounded,
+// out-of-process paste) with debounced Entur geocoder results below it.
 Column {
   id: root
   property string label: ""
@@ -16,10 +19,8 @@ Column {
   property int revision: 0
   property int requestedRevision: 0
   property bool searching: false
+  property alias input: input
   signal changed
-  function tr(s) {
-    return FoamyI18n.t(s)
-  }
   function selectStation(value) {
     selected = value
     input.text = value ? value.name : ""
@@ -32,44 +33,33 @@ Column {
   function choose(value) {
     selectStation(value)
     changed()
-    input.forceActiveFocus()
+    input.focusInput()
   }
   function runSearch() {
-    if (process.running)
-      return
+    if (process.running) return
     if (input.text.trim().length < 2 || selected) {
       searching = false
       return
     }
     requestedText = input.text
     requestedRevision = revision
-    process.command = ["timeout", "--kill-after=2s", "18s", "python3", helperPath, "--search", requestedText]
+    // `--search=` keeps a query that starts with "-" from parsing as an option.
+    process.command = ["timeout", "--kill-after=2s", "18s", "python3", helperPath, "--search=" + requestedText]
     process.running = true
   }
-  spacing: Style.space(6)
+  spacing: FoamyStyle.gapSmall
   TrainText {
     text: root.label
-    color: Qt.tint(Color.popups.background, Qt.alpha(Color.popups.text, 0.7))
+    color: FoamyPalette.secondaryText
+    font.pixelSize: FoamyStyle.font.bodySmall
   }
-  Controls.TextField {
+  SafeTextField {
     id: input
     objectName: "stationInput"
     width: parent.width
-    implicitHeight: Style.space(36)
-    padding: Style.space(10)
-    placeholderText: root.tr("Search stations…")
-    color: Color.popups.text
-    placeholderTextColor: Qt.alpha(Color.popups.text, 0.5)
-    font.family: "sans-serif"
-    font.pixelSize: Style.space(13)
-    selectByMouse: true
+    placeholderText: FoamyI18n.t("Search stations…")
+    translate: FoamyI18n.t
     Accessible.name: root.label
-    background: Rectangle {
-      radius: Style.cornerRadius * 2
-      color: Qt.alpha(Color.popups.text, 0.055)
-      border.width: input.activeFocus ? 1 : 0
-      border.color: Color.accent
-    }
     onTextEdited: {
       root.selected = null
       root.results = []
@@ -79,26 +69,34 @@ Column {
       debounce.restart()
       root.changed()
     }
+    onKeyPressed: function(event) {
+      if (event.key === Qt.Key_Down && resultRepeater.count > 0) {
+        resultRepeater.itemAt(0).forceActiveFocus()
+        event.accepted = true
+      }
+    }
   }
   TrainText {
-    visible: root.searching || root.error !== ""
+    visible: root.searching || root.error !== "" || input.pasteError !== ""
     width: parent.width
-    text: root.searching ? root.tr("Searching…") : root.error
-    color: root.error ? Color.urgent : Color.popups.text
-    font.pixelSize: Style.space(11)
+    text: root.searching ? FoamyI18n.t("Searching…") : root.error !== "" ? root.error : FoamyI18n.t(input.pasteError)
+    color: root.searching ? FoamyPalette.mutedText : Commons.Color.urgent
+    font.pixelSize: FoamyStyle.font.bodySmall
   }
   Repeater {
+    id: resultRepeater
     model: root.results
     Rectangle {
       id: result
       objectName: "stationResult"
       required property var modelData
+      required property int index
       width: root.width
-      height: resultText.implicitHeight + Style.space(16)
-      radius: Style.cornerRadius * 2
-      color: hover.containsMouse || activeFocus ? Qt.alpha(Color.accent, 0.12) : Qt.alpha(Color.popups.text, 0.04)
+      height: resultText.implicitHeight + FoamyStyle.gap * 2
+      radius: FoamyStyle.radius
+      color: hover.containsMouse || activeFocus ? FoamyPalette.selectedFill : Qt.alpha(FoamyPalette.text, 0.04)
       border.width: activeFocus ? 1 : 0
-      border.color: Color.accent
+      border.color: Commons.Color.accent
       activeFocusOnTab: true
       function choose() {
         root.choose(modelData)
@@ -109,11 +107,13 @@ Column {
       Keys.onReturnPressed: choose()
       Keys.onEnterPressed: choose()
       Keys.onSpacePressed: choose()
+      Keys.onDownPressed: if (index + 1 < resultRepeater.count) resultRepeater.itemAt(index + 1).forceActiveFocus()
+      Keys.onUpPressed: index > 0 ? resultRepeater.itemAt(index - 1).forceActiveFocus() : input.focusInput()
       TrainText {
         id: resultText
-        x: Style.space(9)
-        y: Style.space(8)
-        width: parent.width - Style.space(18)
+        x: FoamyStyle.gap
+        y: FoamyStyle.gap
+        width: parent.width - FoamyStyle.gap * 2
         text: result.modelData.label
       }
       MouseArea {
@@ -136,7 +136,7 @@ Column {
       id: output
       waitForEnd: true
     }
-    onExited: function (code) {
+    onExited: function(code) {
       // A completed search may belong to a replaced query or a selected result.
       if (root.requestedRevision !== root.revision) {
         Qt.callLater(root.runSearch)
@@ -144,21 +144,19 @@ Column {
       }
       root.searching = false
       try {
-        if (code !== 0)
-          throw Error("search failed")
+        if (code !== 0) throw Error("search failed")
         var data = JSON.parse(output.text)
         if (data.status !== "ok") {
-          root.error = root.tr(data.error || "Station search failed. Try again.")
+          root.error = FoamyI18n.t(data.error || "Station search failed. Try again.")
           return
         }
-        if (!Array.isArray(data.stations) || !data.stations.every(function (s) {
-          return Model.validStation(s) && typeof s.label === "string"
-        }))
-          throw Error("invalid stations")
+        if (!Array.isArray(data.stations) || !data.stations.every(function(s) {
+          return Model.validStation(s) && typeof s.label === "string" && s.label.length <= 160
+        })) throw Error("invalid stations")
         root.results = data.stations
-        root.error = data.stations.length ? "" : root.tr("No stations found.")
+        root.error = data.stations.length ? "" : FoamyI18n.t("No stations found.")
       } catch (e) {
-        root.error = root.tr("Station search failed. Try again.")
+        root.error = FoamyI18n.t("Station search failed. Try again.")
       }
     }
   }

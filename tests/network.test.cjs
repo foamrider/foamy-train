@@ -4,14 +4,15 @@ const path = require("node:path");
 const vm = require("node:vm");
 const test = require("node:test");
 
-const qml = fs.readFileSync(path.join(__dirname, "../Panel.qml"), "utf8");
+// Exercise TrainService's production functions with observable process,
+// timer and lock-registry boundaries.
+const qml = fs.readFileSync(path.join(__dirname, "../TrainService.qml"), "utf8");
 function controller(values, functions) {
   const context = vm.createContext(values);
   context.root = context;
-  // Exercise the controller's production functions with observable process/timer boundaries.
   for (const name of functions) {
     const start = qml.indexOf("function " + name + "(");
-    assert.ok(start >= 0, "Missing controller function: " + name);
+    assert.ok(start >= 0, "Missing service function: " + name);
     let end = qml.indexOf("{", start) + 1;
     let depth = 1;
     while (depth && end < qml.length) {
@@ -28,33 +29,71 @@ function timer() {
     restart() { this.running = true; this.starts++; },
     stop() { this.running = false; } };
 }
-
-function fixture() {
-  return controller({ initialized: true, sessionLocked: false, withinSchedule: true,
-    networkReady: false, networkRetries: 0, networkRetry: timer(),
-    statusProcess: { running: false }, routeSaving: false, generation: 7,
-    report: { route: { from: { id: "one" }, to: { id: "two" } } },
-    helperPath: "/fixture/train.py", language: "en", lookAheadHours: 24,
-    pendingRefresh: false, pendingForce: false,
-  }, ["refresh", "retryNetworkRequest", "resetNetworkRetry"]);
+function fixture(lock) {
+  const c = controller({ active: true, configured: true, sessionLocked: false, withinSchedule: true, demanded: false,
+    networkReady: false, networkRetries: 0, networkRetry: timer(), pollTimer: timer(), canPoll: false, pollInterval: 60,
+    statusProcess: { running: false }, lockProcess: { running: false }, generation: 7,
+    route: { from: { id: "NSR:StopPlace:1", name: "One" }, to: { id: "NSR:StopPlace:2", name: "Two" } },
+    helperPath: "/fixture/train.py", language: "en", lookAheadHours: 24, lastAttempt: 0,
+    lockProbeAvailable: true, lockInProcess: false, lockProbeFailures: 0, lockForce: false,
+    pendingRefresh: false, pendingForce: false, Math, JSON, String, Date,
+    IpcResolver: { registry: () => lock === undefined ? null : { call: (t, m, a) => {
+      assert.equal(JSON.stringify([t, m, a]), JSON.stringify(["lock", "isLocked", []]));
+      return lock === null ? { ran: false } : { ran: true, output: String(lock) };
+    } } },
+  }, ["refresh", "fetch", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed"]);
+  return c;
 }
-test("offline startup loads cache only; online requests use the current route", () => {
-  const c = fixture();
-  c.refresh(true);
+test("offline startup loads cache only; the route goes to stdin, never argv", () => {
+  const c = fixture(false);
+  c.refresh(true, false);
   assert.ok(c.statusProcess.command.includes("--offline"));
+  assert.ok(c.statusProcess.command.includes("--route-stdin"));
+  assert.equal(c.statusProcess.command.join(" ").includes("NSR:"), false);
+  assert.deepEqual(JSON.parse(c.statusProcess.requestInput), c.route);
   c.statusProcess.running = false; c.networkReady = true;
-  c.refresh(true);
+  c.refresh(true, false);
   assert.equal(c.statusProcess.command.includes("--offline"), false);
   assert.equal(c.requestedGeneration, 7);
 });
 test("a reconnect during an active worker queues one forced refresh", () => {
-  const c = fixture(); c.statusProcess.running = true; c.networkReady = true;
-  c.refresh(true); c.refresh(false);
+  const c = fixture(false); c.statusProcess.running = true; c.networkReady = true;
+  c.refresh(true, false); c.refresh(false, false);
   assert.equal(c.pendingRefresh, true); assert.equal(c.pendingForce, true);
   assert.equal(c.statusProcess.command, undefined);
 });
+test("a locked session (4.5 in-process probe) skips Entur and keeps probing", () => {
+  const c = fixture(true); c.networkReady = true;
+  c.refresh(false, false);
+  assert.equal(c.sessionLocked, true);
+  assert.equal(c.lockInProcess, true);
+  assert.equal(c.statusProcess.running, false);
+  assert.ok(c.lastAttempt > 0);
+});
+test("a popup open or explicit refresh skips the probe and clears the lock", () => {
+  const c = fixture(true); c.networkReady = true; c.sessionLocked = true;
+  c.refresh(true, true);
+  assert.equal(c.sessionLocked, false);
+  assert.equal(c.statusProcess.running, true);
+});
+test("without an in-process answer the omarchy-shell probe runs first", () => {
+  for (const lock of [undefined, null]) {
+    const c = fixture(lock); c.networkReady = true;
+    c.refresh(true, false);
+    assert.equal(c.lockProcess.running, true);
+    assert.equal(c.lockForce, true);
+    assert.equal(c.statusProcess.running, false);
+  }
+});
+test("a lock service that never answers stops being probed", () => {
+  const c = fixture(null);
+  for (let i = 0; i < 3; i++) c.lockProbeFailed();
+  assert.equal(c.lockProbeAvailable, false);
+  c.networkReady = true; c.refresh(false, false);
+  assert.equal(c.statusProcess.running, true);
+});
 test("retries back off, stop after three, and reset after recovery", () => {
-  const c = fixture(); c.networkReady = true;
+  const c = fixture(false); c.networkReady = true;
   for (const interval of [2500, 5000, 10000]) {
     c.retryNetworkRequest(); assert.equal(c.networkRetry.interval, interval);
   }
@@ -63,7 +102,17 @@ test("retries back off, stop after three, and reset after recovery", () => {
 });
 test("offline, locked, and out-of-schedule states suppress retries", () => {
   for (const state of [{networkReady:false}, {networkReady:true,sessionLocked:true}, {networkReady:true,withinSchedule:false}]) {
-    const c = fixture(); Object.assign(c, state); c.retryNetworkRequest();
+    const c = fixture(false); Object.assign(c, state); c.retryNetworkRequest();
     assert.equal(c.networkRetry.starts, 0);
   }
+});
+test("the poll timer waits for the rest of the current interval", () => {
+  const c = fixture(false); c.canPoll = true; c.pollInterval = 900;
+  c.lastAttempt = Date.now() / 1000 - 300;
+  c.schedule();
+  assert.ok(Math.abs(c.pollTimer.interval - 600000) < 2000, String(c.pollTimer.interval));
+  c.pollInterval = 60; c.schedule();
+  assert.equal(c.pollTimer.interval, 1000, "an overdue poll runs at once");
+  c.canPoll = false; c.schedule();
+  assert.equal(c.pollTimer.running, false);
 });

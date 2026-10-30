@@ -1,293 +1,304 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
-import qs.Ui
-import "Preferences.js" as Preferences
+import qs.Commons as Commons
+import "kit"
 import "Model.js" as Model
 
+// Departures: header, the next train (hero), its details and notices, route
+// notices, following departures and the footer. Stops for the popup cursor
+// are listed in `stops` in visual order; `cursorKey` says which one is lit.
 Column {
   id: root
-  property real cornerRadius: Style.cornerRadius * 2
   required property var report
   required property real nowEpoch
+  property bool stale: false
+  property var departures: []
+  property var next: null
   property string language: "en"
   property bool loading: false
-  property bool offline: false
   property bool outsideSchedule: false
   property bool routeBusy: false
-  readonly property bool stale: Model.stale(report, nowEpoch, offline)
-  readonly property var departures: Model.upcoming(report, nowEpoch, stale)
-  readonly property var next: Model.next(departures)
-  readonly property var following: departures.filter(function (d) {
-    return !root.next || d.id !== root.next.id
-  })
+  property string cursorKey: ""
+  // Expanded notice keys (notice detail shown).
+  property var expanded: ({})
+
+  // The hero countdown is the plugin's one display numeral; FoamyStyle's
+  // type scale stops at 28 (kit issue filed for a display numeral token).
+  readonly property int heroNumber: Style.space(52)
+  readonly property int heroTime: Style.space(46)
+  readonly property int heroUnit: Style.space(20)
+
+  readonly property var following: departures.filter(function(d) { return !root.next || d.id !== root.next.id })
   readonly property bool paused: outsideSchedule
-  readonly property color secondary: Qt.tint(Color.popups.background, Qt.alpha(Color.popups.text, 0.7))
-  readonly property color warning: Color.popups.background.hslLightness > 0.5 ? "#86601b" : "#d7b56d"
-  property alias settingsTarget: settingsAction
-  signal settingsRequested
-  signal swapRequested
-  signal refreshRequested
-  function tr(s) {
-    return FoamyI18n.t(s)
+  readonly property bool unconfigured: report.status === "unconfigured"
+  readonly property color warningText: FoamyPalette.onSurface(FoamyPalette.warning)
+
+  function formatNumber(value) { return FoamyI18n.number(value, 0) }
+  function durationText(minutes) { return Model.duration(minutes, root.language, root.formatNumber) }
+  function updatedText() {
+    var minutes = Math.max(0, Math.floor((nowEpoch - report.updatedAt) / 60))
+    return minutes === 0 ? FoamyI18n.t("Updated just now") : FoamyI18n.tn("Updated %1 minutes ago", minutes)
   }
+  function noticeStops(prefix, notices) {
+    return notices.filter(function(n) { return n.detail !== "" }).map(function(n) { return prefix + n.id })
+  }
+  readonly property var stops: {
+    var list = []
+    if (report.route) list.push("swap")
+    list.push("settings")
+    if (unconfigured) list.push("choose")
+    if (!paused) {
+      if (next) list = list.concat(noticeStops("next/", next.notices))
+      list = list.concat(noticeStops("route/", report.routeNotices))
+      following.forEach(function(d) { list = list.concat(root.noticeStops("dep/" + d.id + "/", d.notices)) })
+      list.push("refresh")
+    }
+    return list
+  }
+
+  signal settingsRequested()
+  signal swapRequested()
+  signal refreshRequested()
+  signal stopHovered(string key)
+  signal revealRequested(Item item)
+
+  function toggle(key) {
+    var state = Object.assign({}, expanded)
+    state[key] = !state[key]
+    expanded = state
+  }
+  function activate(key) {
+    if (key === "swap") { if (!routeBusy) swapRequested() }
+    else if (key === "settings" || key === "choose") settingsRequested()
+    else if (key === "refresh") { if (!loading && !routeBusy) refreshRequested() }
+    else if (key !== "") toggle(key)
+  }
+
   spacing: 0
+
   Rectangle {
     width: parent.width
-    height: hero.implicitHeight + Style.space(36)
-    color: Qt.alpha(Color.popups.text, 0.045)
-    topLeftRadius: root.cornerRadius
-    topRightRadius: root.cornerRadius
+    height: header.height + hero.implicitHeight + FoamyStyle.padding
+    color: Qt.alpha(FoamyPalette.text, 0.045)
+    topLeftRadius: FoamyStyle.innerRadius(FoamyStyle.radius, FoamyStyle.borderWidth)
+    topRightRadius: topLeftRadius
+
+    FoamyHeader {
+      id: header
+      width: parent.width
+      iconName: "train"
+      title: FoamyI18n.t("Trains")
+      meta: root.report.route ? FoamyI18n.t("%1 → %2", [root.report.route.from.name, root.report.route.to.name]) : ""
+      settingsHasCursor: root.cursorKey === "settings"
+      onSettingsClicked: root.settingsRequested()
+      onSettingsHovered: function(hovered) { if (hovered) root.stopHovered("settings") }
+      FoamyAction {
+        objectName: "directionAction"
+        visible: !!root.report.route
+        iconName: "swap"
+        tooltipText: FoamyI18n.t("Switch direction")
+        foreground: FoamyPalette.secondaryText
+        actionEnabled: !root.routeBusy
+        hasCursor: root.cursorKey === "swap"
+        onHoveredChanged: if (hovered) root.stopHovered("swap")
+        onClicked: root.swapRequested()
+      }
+    }
+
     Column {
       id: hero
-      x: Style.space(20)
-      y: Style.space(18)
-      width: parent.width - Style.space(40)
-      spacing: Style.space(14)
-      RowLayout {
-        width: parent.width
-        Item {
-          width: root.report.route ? Style.space(60) : Style.space(28)
-          height: Style.space(28)
-        }
-        TrainText {
-          Layout.fillWidth: true
-          horizontalAlignment: Text.AlignHCenter
-          text: root.tr("Trains") + (root.report.route ? " · " + root.report.route.from.name : "")
-          color: root.secondary
-          font.pixelSize: Style.space(14)
-        }
-        TrainAction {
-          id: directionAction
-          objectName: "directionAction"
-          visible: !!root.report.route
-          iconName: "swap"
-          tooltipText: root.tr("Switch direction")
-          foreground: root.secondary
-          enabled: !root.routeBusy
-          onClicked: root.swapRequested()
-        }
-        TrainAction {
-          id: settingsAction
-          tooltipText: root.tr("Settings")
-          foreground: root.secondary
-          onClicked: root.settingsRequested()
-        }
-      }
+      anchors.top: header.bottom
+      x: FoamyStyle.padding
+      width: parent.width - FoamyStyle.padding * 2
+      spacing: FoamyStyle.gap
+
       Column {
         visible: !!root.next && !root.paused
         width: parent.width
-        spacing: Style.space(10)
+        spacing: FoamyStyle.rowPadding
         Row {
           objectName: "heroCountdown"
           anchors.horizontalCenter: parent.horizontalCenter
-          spacing: Style.space(10)
+          spacing: FoamyStyle.rowPadding
           TrainText {
             visible: root.stale
             text: root.next ? root.next.expectedTime : ""
-            font.pixelSize: Style.space(46)
+            font.pixelSize: root.heroTime
             font.weight: Font.Light
+            wrapMode: Text.NoWrap
           }
           Repeater {
             model: root.next && !root.stale ? Model.durationParts(Model.minutes(root.next, root.nowEpoch), root.language) : []
             Row {
               required property var modelData
-              spacing: Style.space(5)
+              spacing: FoamyStyle.gapSmall
               TrainText {
                 id: amount
-                text: parent.modelData.value
-                font.pixelSize: Style.space(52)
+                text: root.formatNumber(parent.modelData.value)
+                font.pixelSize: root.heroNumber
                 font.weight: Font.Light
+                wrapMode: Text.NoWrap
               }
               TrainText {
                 text: parent.modelData.unit
-                font.pixelSize: Style.space(20)
+                font.pixelSize: root.heroUnit
                 anchors.baseline: amount.baseline
+                wrapMode: Text.NoWrap
               }
             }
           }
         }
-        RowLayout {
+        TrainText {
           width: parent.width
-          spacing: Style.space(4)
-          Item {
-            Layout.fillWidth: true
-          }
-          TrainText {
-            Layout.maximumWidth: hero.width - Style.space(40)
-            horizontalAlignment: Text.AlignHCenter
-            text: root.report.route ? root.tr(root.stale ? "Last known to" : "Next to") + " " + root.report.route.to.name :
-                                      ""
-            font.pixelSize: Style.space(18)
-          }
-          Item {
-            Layout.fillWidth: true
-          }
+          horizontalAlignment: Text.AlignHCenter
+          text: root.report.route ? FoamyI18n.t(root.stale ? "Last known to" : "Next to") + " " + root.report.route.to.name : ""
+          font.pixelSize: FoamyStyle.font.iconLarge
         }
         Row {
           anchors.horizontalCenter: parent.horizontalCenter
-          spacing: Style.space(4)
+          spacing: FoamyStyle.gapSmall
           TrainText {
             text: root.next ? root.next.line + " ·" : ""
-            color: root.secondary
+            color: FoamyPalette.secondaryText
+            wrapMode: Text.NoWrap
           }
           TrainText {
             text: root.next ? root.next.aimedTime : ""
             font.strikeout: !!root.next && root.next.delay > 0
-            color: root.secondary
+            color: FoamyPalette.secondaryText
+            wrapMode: Text.NoWrap
           }
           TrainText {
             visible: !!root.next && root.next.delay > 0
             text: root.next ? "→ " + root.next.expectedTime : ""
-            color: root.secondary
+            color: FoamyPalette.secondaryText
+            wrapMode: Text.NoWrap
           }
           TrainText {
             visible: !!root.next && !root.stale
-            text: root.next ? "· " + (root.next.delay > 0 ? Model.duration(root.next.delay, root.language) + " " + root.tr("late") : root.tr(
-                                                              root.next.realtime ? "On time" : "Scheduled")) : ""
-            color: root.next && root.next.delay > 0 ? root.warning : root.secondary
+            text: root.next ? "· " + (root.next.delay > 0 ? root.durationText(root.next.delay) + " " + FoamyI18n.t("late")
+                                                          : FoamyI18n.t(root.next.realtime ? "On time" : "Scheduled")) : ""
+            color: root.next && root.next.delay > 0 ? root.warningText : FoamyPalette.secondaryText
+            wrapMode: Text.NoWrap
           }
         }
       }
+
       Column {
         visible: !root.next || root.paused
         width: parent.width
-        spacing: Style.space(16)
-        OpticalGlyph {
-          objectName: "sleepIcon"
-          visible: root.paused
-          anchors.horizontalCenter: parent.horizontalCenter
-          width: Style.space(80)
-          height: width
-          text: "󰒲"
-          fontFamily: Style.font.family
-          fontSize: Style.space(64)
-          color: root.secondary
-        }
-        TrainIcon {
-          visible: !root.paused
+        spacing: FoamyStyle.gapLarge
+        FoamyIcon {
+          objectName: root.paused ? "sleepIcon" : "emptyIcon"
           anchors.horizontalCenter: parent.horizontalCenter
           width: Style.space(32)
           height: width
-          name: "train"
-          color: root.secondary
+          name: root.paused ? "moon" : "train"
+          color: FoamyPalette.secondaryText
         }
         TrainText {
           width: parent.width
           horizontalAlignment: Text.AlignHCenter
-          font.pixelSize: Style.space(17)
-          text: root.report.status === "unconfigured" ? root.tr("Choose your stations") : root.paused ? root.tr(
-                                                                                                          "Outside your schedule") :
-                                                                                                        root.loading
-                                                                                                        ? root.tr(
-                                                                                                            "Loading departures…") :
-                                                                                                          root.report.status
-                                                                                                          === "error"
-                                                                                                          ? root.tr(
-                                                                                                              "No departures available.") :
-                                                                                                            root.departures.length
-                                                                                                            ? root.tr(
-                                                                                                                "All upcoming trains are cancelled.") :
-                                                                                                              root.tr("No direct trains found.")
+          font.pixelSize: FoamyStyle.font.heading
+          text: root.unconfigured ? FoamyI18n.t("Choose your stations")
+                : root.paused ? FoamyI18n.t("Outside your schedule")
+                : root.loading ? FoamyI18n.t("Loading departures…")
+                : root.report.status === "error" ? FoamyI18n.t("No departures available")
+                : root.departures.length ? FoamyI18n.t("All upcoming trains are cancelled")
+                : FoamyI18n.t("No direct trains found")
         }
         TrainText {
           visible: !!root.report.route
           width: parent.width
           horizontalAlignment: Text.AlignHCenter
-          color: root.secondary
-          text: root.report.route ? root.tr("To") + " " + root.report.route.to.name : ""
+          color: FoamyPalette.secondaryText
+          text: root.report.route ? FoamyI18n.t("To") + " " + root.report.route.to.name : ""
         }
         TrainText {
-          visible: root.report.status === "unconfigured" && !root.paused
+          visible: root.unconfigured && !root.paused
           width: parent.width
           horizontalAlignment: Text.AlignHCenter
-          color: root.secondary
-          text: root.tr("Choose two stations to see direct trains.")
+          color: FoamyPalette.mutedText
+          font.pixelSize: FoamyStyle.font.bodySmall
+          text: FoamyI18n.t("Choose two stations to see direct trains.")
         }
-        RowLayout {
-          width: parent.width
-          Item {
-            Layout.fillWidth: true
-          }
-          TrainAction {
-            visible: root.report.status === "unconfigured"
-            iconName: "settings"
-            label: root.tr("Choose stations")
-            foreground: Color.accent
-            onClicked: root.settingsRequested()
-          }
-          Item {
-            Layout.fillWidth: true
-          }
+        FoamyAction {
+          visible: root.unconfigured
+          anchors.horizontalCenter: parent.horizontalCenter
+          iconName: "settings"
+          label: FoamyI18n.t("Choose stations")
+          foreground: Commons.Color.accent
+          hasCursor: root.cursorKey === "choose"
+          onHoveredChanged: if (hovered) root.stopHovered("choose")
+          onClicked: root.settingsRequested()
         }
       }
     }
   }
+
   Column {
+    id: details
     objectName: "departureDetails"
     visible: !root.paused
     width: parent.width
-    padding: Style.space(20)
-    spacing: Style.space(16)
+    padding: FoamyStyle.padding
+    spacing: FoamyStyle.font.heading
+    readonly property real innerWidth: width - padding * 2
+
     RowLayout {
-      visible: !!root.next && !root.paused
-      width: parent.width - parent.padding * 2
+      visible: !!root.next
+      width: details.innerWidth
       Repeater {
         model: root.next ? [
-                             {
-                               label: "Platform",
-                               value: root.next.platform
-                             },
-                             {
-                               label: "Arrival",
-                               value: root.next.arrivalTime
-                             },
-                             {
-                               label: "Journey",
-                               value: Model.duration(root.next.duration, root.language)
-                             }
-                           ] : []
+          { label: "Platform", value: root.next.platform },
+          { label: "Arrival", value: root.next.arrivalTime },
+          { label: "Journey", value: root.durationText(root.next.duration) }
+        ] : []
         Column {
           required property var modelData
           Layout.fillWidth: true
           Layout.preferredWidth: 1
-          spacing: Style.space(8)
+          spacing: FoamyStyle.gap
           TrainText {
             width: parent.width
-            text: root.tr(modelData.label)
+            text: FoamyI18n.t(modelData.label)
             horizontalAlignment: Text.AlignHCenter
-            color: root.secondary
-            font.pixelSize: Style.space(11)
+            color: FoamyPalette.secondaryText
+            font.pixelSize: FoamyStyle.font.bodySmall
           }
           TrainText {
             width: parent.width
             text: modelData.value
             horizontalAlignment: Text.AlignHCenter
-            font.pixelSize: Style.space(16)
+            font.pixelSize: FoamyStyle.font.heading
           }
         }
       }
     }
+
     Rectangle {
       visible: root.stale || root.report.error !== ""
-      width: parent.width - parent.padding * 2
-      height: warningText.implicitHeight + Style.space(20)
-      radius: Style.cornerRadius * 2
-      color: Qt.alpha(root.warning, 0.08)
+      width: details.innerWidth
+      height: warningLabel.implicitHeight + FoamyStyle.rowPadding * 2
+      radius: FoamyStyle.radius
+      color: Qt.alpha(FoamyPalette.warning, 0.08)
       TrainText {
-        id: warningText
-        x: Style.space(10)
-        y: Style.space(10)
-        width: parent.width - Style.space(20)
-        color: root.warning
-        text: (root.stale ? root.tr("Cached times; live predictions unavailable.") + "\n" : "") + root.tr(
-                root.report.error)
+        id: warningLabel
+        x: FoamyStyle.rowPadding
+        y: FoamyStyle.rowPadding
+        width: parent.width - FoamyStyle.rowPadding * 2
+        color: root.warningText
+        Accessible.role: Accessible.AlertMessage
+        text: (root.stale ? FoamyI18n.t("Cached times; live predictions unavailable.") + (root.report.error ? "\n" : "") : "")
+          + (root.report.error ? FoamyI18n.t(root.report.error) : "")
       }
     }
+
     Column {
       visible: !!root.next && root.next.notices.length > 0
-      width: parent.width - parent.padding * 2
-      spacing: Style.space(2)
+      width: details.innerWidth
+      spacing: FoamyStyle.gapTiny
       Repeater {
         model: root.next ? root.next.notices : []
         Notice {
@@ -295,16 +306,20 @@ Column {
           width: parent.width
           notice: modelData
           filled: true
+          cursorKey: "next/" + modelData.id
+          view: root
         }
       }
     }
+
     Column {
       visible: root.report.routeNotices.length > 0
-      width: parent.width - parent.padding * 2
-      spacing: Style.space(6)
+      width: details.innerWidth
+      spacing: FoamyStyle.gapSmall
       TrainText {
-        text: root.tr("Route notices")
-        color: root.secondary
+        text: FoamyI18n.t("Route notices")
+        color: FoamyPalette.secondaryText
+        font.pixelSize: FoamyStyle.font.bodySmall
       }
       Repeater {
         model: root.report.routeNotices
@@ -313,18 +328,22 @@ Column {
           width: parent.width
           notice: modelData
           filled: true
+          cursorKey: "route/" + modelData.id
+          view: root
         }
       }
     }
+
     Column {
       visible: root.following.length > 0
-      width: parent.width - parent.padding * 2
-      spacing: Style.space(10)
+      width: details.innerWidth
+      spacing: FoamyStyle.rowPadding
       TrainText {
-        text: root.tr(root.stale ? "Last known departures" : root.following.some(function (d) {
+        text: FoamyI18n.t(root.stale ? "Last known departures" : root.following.some(function(d) {
           return root.next && d.expected < root.next.expected
         }) ? "Other departures" : "Following departures")
-        color: root.secondary
+        color: FoamyPalette.secondaryText
+        font.pixelSize: FoamyStyle.font.bodySmall
       }
       Repeater {
         model: root.following
@@ -336,39 +355,45 @@ Column {
           nowEpoch: root.nowEpoch
           language: root.language
           stale: root.stale
+          view: root
         }
       }
     }
+
     Rectangle {
-      width: parent.width - parent.padding * 2
+      width: details.innerWidth
       height: 1
-      color: Qt.alpha(Color.popups.text, 0.14)
+      color: FoamyPalette.divider
     }
+
     RowLayout {
-      width: parent.width - parent.padding * 2
-      spacing: Style.space(8)
+      width: details.innerWidth
+      spacing: FoamyStyle.gap
       TrainText {
         text: "Entur"
-        color: root.secondary
-        font.pixelSize: Style.space(11)
-      }
-      Item {
-        Layout.fillWidth: true
+        color: FoamyPalette.secondaryText
+        font.pixelSize: FoamyStyle.font.bodySmall
+        wrapMode: Text.NoWrap
       }
       TrainText {
         Layout.fillWidth: true
         horizontalAlignment: Text.AlignRight
         visible: root.report.updatedAt > 0
-        text: Preferences.updatedText(root.report.updatedAt, root.nowEpoch, root.tr)
-        color: root.secondary
-        font.pixelSize: Style.space(11)
+        text: root.report.updatedAt > 0 ? root.updatedText() : ""
+        color: FoamyPalette.secondaryText
+        font.pixelSize: FoamyStyle.font.bodySmall
       }
-      TrainAction {
+      FoamyAction {
+        id: refreshAction
+        objectName: "refreshAction"
         iconName: "refresh-cw"
-        tooltipText: root.tr(root.loading ? "Refreshing…" : "Refresh")
-        foreground: root.secondary
+        tooltipText: FoamyI18n.t(root.loading ? "Refreshing…" : "Refresh")
+        foreground: FoamyPalette.secondaryText
         spinning: root.loading
-        enabled: !root.loading && !root.routeBusy
+        actionEnabled: !root.loading && !root.routeBusy
+        hasCursor: root.cursorKey === "refresh"
+        onHasCursorChanged: if (hasCursor) root.revealRequested(refreshAction)
+        onHoveredChanged: if (hovered) root.stopHovered("refresh")
         onClicked: root.refreshRequested()
       }
     }

@@ -1,104 +1,71 @@
 import QtQuick
-import QtQuick.Controls as Controls
 import QtQuick.Layouts
-import qs.Ui
 import qs.Commons
-import "Preferences.js" as Preferences
+import qs.Commons as Commons
+import "kit"
+import "kit/FoamyPrefs.js" as Prefs
+import "Preferences.js" as Schema
 
-Column {
+// Settings: the foamy page skeleton (back, "Settings", "Saving…", error with
+// Retry) with route, bar, departures, refresh and schedule sections.
+FoamySettingsPage {
   id: root
   required property var settings
   required property string language
   property var route: null
   property string helperPath: ""
   property bool routeSaving: false
-  signal applyRoute(var route)
+  signal saveRequested(string key, var value)
+
+  function value(key) { return Prefs.value(Schema.fields, root.settings, key) }
   function saveRoute() {
     // Editing search text is not a station change; persist only a selected pair.
     if (!fromSearch.selected || !toSearch.selected || routeSaving) return
     if (route && fromSearch.selected.id === route.from.id && toSearch.selected.id === route.to.id) return
-    applyRoute({from: fromSearch.selected, to: toSearch.selected})
+    saveRequested("route", { from: fromSearch.selected, to: toSearch.selected })
   }
   function resetRoute() {
     fromSearch.selectStation(route ? route.from : null)
     toSearch.selectStation(route ? route.to : null)
   }
-  property bool saving: false
-  property string error: ""
-  property alias backTarget: backButton
-  signal save(string key, var value)
-  signal back
-  signal clearError
-  function tr(label) {
-    return FoamyI18n.t(label)
+  onRouteChanged: resetRoute()
+  // Choices plus a value saved outside them (from the CLI), in order.
+  function choices(list, current) {
+    return list.indexOf(current) >= 0 ? list : list.concat([current]).sort(function(a, b) { return a - b })
   }
-  function focusBack() {
-    backButton.forceActiveFocus()
+  function secondsLabel(seconds) {
+    return seconds % 60 === 0 ? FoamyI18n.tn("%1 minutes", seconds / 60) : FoamyI18n.tn("%1 seconds", seconds)
   }
-  readonly property color secondary: Qt.tint(Color.popups.background, Qt.alpha(Color.popups.text, 0.7))
-  padding: Style.space(20)
-  spacing: Style.space(14)
-  RowLayout {
-    width: root.width - root.padding * 2
-    TrainAction {
-      id: backButton
-      iconName: "arrow-left"
-      foreground: root.secondary
-      tooltipText: root.tr("Back")
-      onClicked: root.back()
+
+
+  FoamySettingsSection {
+    width: parent.width
+    title: FoamyI18n.t("Route")
+    StationSearch {
+      id: fromSearch
+      objectName: "fromSearch"
+      width: parent.width
+      label: FoamyI18n.t("From")
+      language: root.language
+      helperPath: root.helperPath
+      enabled: !root.routeSaving
+      onChanged: root.saveRoute()
     }
-    Text {
-      text: root.tr("Settings")
-      color: root.secondary
-      font.family: "sans-serif"
-      font.pixelSize: Style.space(13)
-      Layout.fillWidth: true
+    StationSearch {
+      id: toSearch
+      objectName: "toSearch"
+      width: parent.width
+      label: FoamyI18n.t("To")
+      language: root.language
+      helperPath: root.helperPath
+      enabled: !root.routeSaving
+      onChanged: root.saveRoute()
     }
-    Text {
-      visible: root.saving || root.routeSaving
-      text: root.tr("Saving…")
-      color: root.secondary
-      font.family: "sans-serif"
-      font.pixelSize: Style.space(11)
-    }
-  }
-  Text {
-    width: root.width - root.padding * 2
-    visible: root.error !== ""
-    text: root.error
-    textFormat: Text.PlainText
-    wrapMode: Text.WordWrap
-    color: Color.urgent
-    font.family: "sans-serif"
-    font.pixelSize: Style.space(12)
-    Accessible.role: Accessible.AlertMessage
-  }
-  StationSearch {
-    id: fromSearch
-    objectName: "fromSearch"
-    width: root.width - root.padding * 2
-    label: root.tr("From")
-    language: root.language
-    helperPath: root.helperPath
-    enabled: !root.routeSaving
-    onChanged: root.saveRoute()
-  }
-  StationSearch {
-    id: toSearch
-    objectName: "toSearch"
-    width: root.width - root.padding * 2
-    label: root.tr("To")
-    language: root.language
-    helperPath: root.helperPath
-    enabled: !root.routeSaving
-    onChanged: root.saveRoute()
-  }
-  RowLayout {
-    width: root.width - root.padding * 2
-    TrainAction {
+    FoamyAction {
       iconName: "swap"
-      label: root.tr("Switch direction")
-      foreground: root.secondary
+      label: FoamyI18n.t("Switch direction")
+      foreground: FoamyPalette.secondaryText
+      focusable: true
       enabled: !root.routeSaving
       onClicked: {
         var from = fromSearch.selected
@@ -107,136 +74,111 @@ Column {
         root.saveRoute()
       }
     }
-    Item {
-      Layout.fillWidth: true
-    }
   }
-  Rectangle {
-    width: root.width - root.padding * 2
-    height: 1
-    color: Qt.alpha(Color.popups.text, 0.14)
-  }
-  Repeater {
-    objectName: "preferenceFields"
-    model: Preferences.fields.filter(function(f) { return f.type !== "string" })
-    Column {
-      id: fieldRow
-      objectName: modelData.key
-      required property var modelData
-      readonly property var current: Preferences.value(root.settings, modelData.key)
-      width: root.width - root.padding * 2
-      visible: modelData.key !== "scheduleOutsideMode" || Preferences.value(root.settings, "scheduleEnabled")
-      enabled: !root.saving
-      opacity: enabled ? 1 : 0.55
-      TrainDropdown {
-        width: parent.width
-        visible: fieldRow.modelData.type === "enum"
-        label: root.tr(fieldRow.modelData.label)
-        fontFamily: "sans-serif"
-        value: String(fieldRow.current)
-        options: (fieldRow.modelData.options || []).map(function (v) {
-          return {
-            value: v,
-            label: root.tr(Preferences.optionLabel(v))
-          }
-        })
-        onChanged: function (value) {
-          root.save(fieldRow.modelData.key, value)
-        }
-      }
-      Toggle {
-        width: parent.width
-        visible: fieldRow.modelData.type === "boolean"
-        implicitHeight: Style.space(36)
-        color: "transparent"
-        borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
-        radius: Style.cornerRadius * 2
-        fontFamily: "sans-serif"
-        foreground: Color.popups.text
-        titleSize: Style.space(13)
-        label: root.tr(fieldRow.modelData.label)
-        checked: fieldRow.current === true
-        onClicked: root.save(fieldRow.modelData.key, !checked)
-      }
-      RowLayout {
-        width: parent.width
-        visible: fieldRow.modelData.type === "integer"
-        spacing: Style.space(12)
-        Text {
-          Layout.fillWidth: true
-          text: root.tr(fieldRow.modelData.label)
-          wrapMode: Text.WordWrap
-          color: Color.popups.text
-          font.family: "sans-serif"
-          font.pixelSize: Style.space(13)
-        }
-        Controls.TextField {
-          id: input
-          objectName: fieldRow.modelData.key === "lookAheadHours" ? "hoursInput" : "preferenceInput"
-          Layout.preferredWidth: Style.space(68)
-          implicitHeight: Style.space(34)
-          text: String(fieldRow.current)
-          placeholderTextColor: Qt.alpha(Color.popups.text, 0.5)
-          selectByMouse: true
-          color: Color.popups.text
-          font.family: "sans-serif"
-          font.pixelSize: Style.space(12)
-          padding: Style.space(7)
-          Accessible.name: root.tr(fieldRow.modelData.label)
-          background: Rectangle {
-            radius: Style.cornerRadius * 2
-            color: Qt.alpha(Color.popups.text, 0.055)
-            border.width: input.activeFocus ? 1 : 0
-            border.color: Color.accent
-          }
-          onTextEdited: root.clearError()
-          onEditingFinished: {
-            if (!visible)
-              return
-            var next = text.trim() === "" ? NaN : Number(text)
-            if (next !== fieldRow.current)
-              root.save(fieldRow.modelData.key, next)
-          }
-          Keys.onEscapePressed: {
-            text = String(fieldRow.current)
-            root.back()
-          }
-          HoverHandler {
-            id: numberHover
-          }
-          PanelToolTip {
-            visible: numberHover.hovered || input.activeFocus
-            text: fieldRow.modelData.type === "string" ? root.tr("Off") + " / 00:00–24:00" : fieldRow.modelData.min
-                                                         + "–" + fieldRow.modelData.max
-            fontFamily: "sans-serif"
-          }
-        }
-      }
-    }
-  }
-  Column {
-    visible: Preferences.value(root.settings, "scheduleEnabled")
-    width: root.width - root.padding * 2
-    spacing: Style.space(8)
-    RowLayout {
+
+  FoamySettingsSection {
+    width: parent.width
+    title: FoamyI18n.t("Bar")
+    FoamyToggle {
+      objectName: "showBarMinutes"
       width: parent.width
-      Item {Layout.fillWidth:true}
-      TrainText {Layout.preferredWidth:Style.space(58);text:root.tr("From");color:root.secondary;horizontalAlignment:Text.AlignHCenter;font.pixelSize:Style.space(11)}
-      TrainText {Layout.preferredWidth:Style.space(58);text:root.tr("To");color:root.secondary;horizontalAlignment:Text.AlignHCenter;font.pixelSize:Style.space(11)}
+      label: FoamyI18n.t("Show minutes in the bar")
+      checked: root.value("showBarMinutes") === true
+      enabled: !root.saving
+      onClicked: root.saveRequested("showBarMinutes", !checked)
+    }
+  }
+
+  FoamySettingsSection {
+    width: parent.width
+    title: FoamyI18n.t("Departures")
+    description: FoamyI18n.t("Only direct trains are shown. Times are in Norway.")
+    FoamyDropdown {
+      objectName: "lookAheadHours"
+      width: parent.width
+      label: FoamyI18n.t("Show trains in the next")
+      value: String(root.value("lookAheadHours"))
+      enabled: !root.saving
+      options: root.choices(Schema.hourChoices, root.value("lookAheadHours")).map(function(hours) {
+        return { value: String(hours), label: FoamyI18n.tn("%1 hours", hours) }
+      })
+      onChanged: function(v) { root.saveRequested("lookAheadHours", Number(v)) }
+    }
+  }
+
+  FoamySettingsSection {
+    width: parent.width
+    title: FoamyI18n.t("Refresh")
+    description: FoamyI18n.t("Checks less often while the popup is closed and the next train is more than 30 minutes away. Paused while the screen is locked.")
+    FoamyDropdown {
+      objectName: "refreshSeconds"
+      width: parent.width
+      label: FoamyI18n.t("Refresh every")
+      value: String(root.value("refreshSeconds"))
+      enabled: !root.saving
+      options: root.choices(Schema.refreshChoices, root.value("refreshSeconds")).map(function(seconds) {
+        return { value: String(seconds), label: root.secondsLabel(seconds) }
+      })
+      onChanged: function(v) { root.saveRequested("refreshSeconds", Number(v)) }
+    }
+  }
+
+  FoamySettingsSection {
+    width: parent.width
+    title: FoamyI18n.t("Schedule")
+    description: root.value("scheduleEnabled") ? FoamyI18n.t("Local time. Turn a day off to skip it. Overnight ranges are supported.") : ""
+    FoamyToggle {
+      objectName: "scheduleEnabled"
+      width: parent.width
+      label: FoamyI18n.t("Use a weekly schedule")
+      checked: root.value("scheduleEnabled") === true
+      enabled: !root.saving
+      onClicked: root.saveRequested("scheduleEnabled", !checked)
+    }
+    FoamyDropdown {
+      objectName: "scheduleOutsideMode"
+      visible: root.value("scheduleEnabled")
+      width: parent.width
+      label: FoamyI18n.t("Outside the schedule")
+      value: root.value("scheduleOutsideMode")
+      enabled: !root.saving
+      options: [{ value: "mute", label: FoamyI18n.t("Dim") }, { value: "hide", label: FoamyI18n.t("Hide") }]
+      onChanged: function(v) { root.saveRequested("scheduleOutsideMode", v) }
+    }
+    RowLayout {
+      visible: root.value("scheduleEnabled")
+      width: parent.width
+      spacing: FoamyStyle.gap
+      Item { Layout.fillWidth: true }
+      TrainText {
+        Layout.preferredWidth: Style.space(64)
+        text: FoamyI18n.t("From")
+        color: FoamyPalette.secondaryText
+        horizontalAlignment: Text.AlignHCenter
+        font.pixelSize: FoamyStyle.font.bodySmall
+      }
+      TrainText {
+        Layout.preferredWidth: Style.space(64)
+        text: FoamyI18n.t("To")
+        color: FoamyPalette.secondaryText
+        horizontalAlignment: Text.AlignHCenter
+        font.pixelSize: FoamyStyle.font.bodySmall
+      }
     }
     Repeater {
-      model: Preferences.fields.filter(function(f) {return f.type === "string"})
+      model: root.value("scheduleEnabled") ? Schema.dayKeys : []
       ScheduleDay {
-        required property var modelData
+        required property string modelData
+        required property int index
         width: parent.width
-        objectName: modelData.key
-        label: root.tr(modelData.label)
-        fromLabel: root.tr("From")
-        toLabel: root.tr("To")
-        value: Preferences.value(root.settings, modelData.key)
+        objectName: modelData
+        label: FoamyI18n.t(Schema.dayLabels[index])
+        fromLabel: FoamyI18n.t("From")
+        toLabel: FoamyI18n.t("To")
+        value: root.value(modelData)
         enabled: !root.saving
-        onChanged: function(value) {root.save(modelData.key,value)}
-        onInvalid: root.save(modelData.key, "invalid")
+        onChanged: function(range) { root.saveRequested(modelData, range) }
+        onInvalid: root.saveRequested(modelData, "invalid")
       }
     }
   }

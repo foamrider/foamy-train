@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
+import qs.Commons as Commons
+import "kit"
 import "Model.js" as Model
 
 Rectangle {
@@ -10,94 +12,101 @@ Rectangle {
   required property real nowEpoch
   required property string language
   property bool stale: false
-  readonly property color secondary: Qt.tint(Color.popups.background, Qt.alpha(Color.popups.text, 0.7))
-  readonly property color warning: Color.popups.background.hslLightness > 0.5 ? "#86601b" : "#d7b56d"
-  readonly property color success: Color.popups.background.hslLightness > 0.5 ? "#437341" : "#9fbe92"
-  function tr(s) {
-    return FoamyI18n.t(s)
-  }
-  implicitHeight: body.implicitHeight + Style.space(root.departure.notices.length > 0 ? 15 : 20)
-  radius: Style.cornerRadius * 2
-  color: Qt.alpha(Color.popups.text, 0.05)
+  property Item view: null
+  function formatNumber(value) { return FoamyI18n.number(value, 0) }
+  function durationText(minutes) { return Model.duration(minutes, root.language, root.formatNumber) }
+  implicitHeight: body.implicitHeight + (root.departure.notices.length > 0 ? FoamyStyle.sectionGap : FoamyStyle.padding)
+  radius: FoamyStyle.radius
+  color: Qt.alpha(FoamyPalette.text, 0.05)
   Column {
     id: body
-    x: Style.space(12)
-    y: Style.space(10)
-    width: parent.width - Style.space(24)
-    spacing: Style.space(9)
+    x: FoamyStyle.gapLarge
+    y: FoamyStyle.rowPadding
+    width: parent.width - FoamyStyle.gapLarge * 2
+    spacing: FoamyStyle.gap
     RowLayout {
       width: parent.width
-      spacing: Style.space(12)
+      spacing: FoamyStyle.gapLarge
       Rectangle {
-        width: Math.max(Style.space(34), lineLabel.implicitWidth + Style.space(12))
-        height: Style.space(25)
-        radius: Style.cornerRadius * 2
-        color: Qt.alpha(Color.accent, 0.15)
+        Layout.preferredWidth: Math.max(Style.space(34), lineLabel.implicitWidth + FoamyStyle.gapLarge)
+        Layout.preferredHeight: Style.space(25)
+        radius: FoamyStyle.radius
+        color: Qt.alpha(Commons.Color.accent, 0.15)
         TrainText {
           id: lineLabel
           anchors.centerIn: parent
           text: root.departure.line
-          color: Color.accent
-          font.pixelSize: Style.space(11)
+          color: Commons.Color.accent
+          font.pixelSize: FoamyStyle.font.bodySmall
+          wrapMode: Text.NoWrap
         }
       }
       ColumnLayout {
         Layout.fillWidth: true
-        spacing: Style.space(6)
+        spacing: FoamyStyle.gapSmall
         RowLayout {
           Layout.fillWidth: true
           TrainText {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
             text: root.destination
-            font.pixelSize: Style.space(13)
+            font.pixelSize: FoamyStyle.font.subtitle
+            elide: Text.ElideRight
+            wrapMode: Text.NoWrap
           }
           TrainText {
             visible: !root.departure.cancelled
             Layout.alignment: Qt.AlignVCenter
-            text: root.stale ? root.departure.expectedTime : Model.duration(Model.minutes(root.departure, root.nowEpoch), root.language)
+            text: root.stale ? root.departure.expectedTime : root.durationText(Model.minutes(root.departure, root.nowEpoch))
+            wrapMode: Text.NoWrap
           }
           Rectangle {
             visible: root.departure.cancelled
             Layout.alignment: Qt.AlignVCenter
-            implicitWidth: cancelledLabel.implicitWidth + Style.space(16)
-            implicitHeight: cancelledLabel.implicitHeight + Style.space(8)
-            radius: Style.cornerRadius * 2
-            color: Qt.alpha(Color.urgent, 0.1)
+            implicitWidth: cancelledLabel.implicitWidth + FoamyStyle.sectionGap
+            implicitHeight: cancelledLabel.implicitHeight + FoamyStyle.gap
+            radius: FoamyStyle.radius
+            color: Qt.alpha(Commons.Color.urgent, 0.1)
             TrainText {
               id: cancelledLabel
               anchors.centerIn: parent
-              text: root.tr("Cancelled")
-              color: Color.urgent
+              text: FoamyI18n.t("Cancelled")
+              color: Commons.Color.urgent
+              wrapMode: Text.NoWrap
             }
           }
         }
         Flow {
           Layout.fillWidth: true
-          spacing: Style.space(4)
+          spacing: FoamyStyle.gapSmall
           TrainText {
             text: root.departure.aimedTime
             font.strikeout: root.departure.cancelled || root.departure.delay > 0
-            color: root.secondary
-            font.pixelSize: Style.space(11)
+            color: FoamyPalette.secondaryText
+            font.pixelSize: FoamyStyle.font.bodySmall
+            wrapMode: Text.NoWrap
           }
           TrainText {
             visible: root.departure.delay > 0 && !root.departure.cancelled
             text: "→ " + root.departure.expectedTime
-            color: root.secondary
-            font.pixelSize: Style.space(11)
+            color: FoamyPalette.secondaryText
+            font.pixelSize: FoamyStyle.font.bodySmall
+            wrapMode: Text.NoWrap
           }
           TrainText {
-            text: "· " + root.tr("Platform") + " " + root.departure.platform
-            color: root.secondary
-            font.pixelSize: Style.space(11)
+            text: "· " + FoamyI18n.t("Platform") + " " + root.departure.platform
+            color: FoamyPalette.secondaryText
+            font.pixelSize: FoamyStyle.font.bodySmall
+            wrapMode: Text.NoWrap
           }
           TrainText {
             visible: !root.departure.cancelled && !root.stale
-            text: "· " + (root.departure.delay > 0 ? "+" + Model.duration(root.departure.delay, root.language) : root.tr(
-                                                       root.departure.realtime ? "On time" : "Scheduled"))
-            color: root.departure.delay > 0 ? root.warning : root.departure.realtime ? root.success : root.secondary
-            font.pixelSize: Style.space(11)
+            text: "· " + (root.departure.delay > 0 ? "+" + root.durationText(root.departure.delay)
+                                                    : FoamyI18n.t(root.departure.realtime ? "On time" : "Scheduled"))
+            color: root.departure.delay > 0 ? FoamyPalette.onSurface(FoamyPalette.warning)
+                   : root.departure.realtime ? FoamyPalette.onSurface(FoamyPalette.success) : FoamyPalette.secondaryText
+            font.pixelSize: FoamyStyle.font.bodySmall
+            wrapMode: Text.NoWrap
           }
         }
       }
@@ -105,11 +114,11 @@ Rectangle {
     Column {
       visible: root.departure.notices.length > 0
       width: parent.width
-      spacing: Style.space(5)
+      spacing: FoamyStyle.gapSmall
       Rectangle {
         width: parent.width
         height: 1
-        color: Qt.alpha(Color.popups.text, 0.14)
+        color: FoamyPalette.divider
       }
       Repeater {
         model: root.departure.notices
@@ -118,6 +127,8 @@ Rectangle {
           width: body.width
           notice: modelData
           cancelled: root.departure.cancelled
+          cursorKey: "dep/" + root.departure.id + "/" + modelData.id
+          view: root.view
         }
       }
     }

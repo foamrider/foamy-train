@@ -21,7 +21,42 @@ function parse(text) {
   })) throw Error("Invalid train response")
   return r
 }
-function stale(report,now,offline) { return report.updatedAt>0 && (report.stale || offline || now-report.updatedAt>180) }
+// Cached times count as stale once two polls in a row are overdue, so a long
+// refresh interval never turns the bar "stale" between ordinary polls.
+var minimumStaleSeconds = 180
+function staleAfter(intervalSeconds) {
+  var interval = finite(intervalSeconds) && intervalSeconds > 0 ? intervalSeconds : 60
+  return Math.max(minimumStaleSeconds, 2 * interval + 30)
+}
+function stale(report,now,offline,intervalSeconds) { return report.updatedAt>0 && (report.stale || offline || now-report.updatedAt>staleAfter(intervalSeconds)) }
+
+// Adaptive Entur polling. The configured interval applies while someone is
+// looking (a popup is open) and while the next train is close; far-off or
+// missing departures are checked less often. Locked sessions do not fetch at
+// all (the caller only probes the lock, at lockSeconds).
+var nearSeconds = 30 * 60
+var soonSeconds = 2 * 3600
+var soonPollSeconds = 5 * 60
+var farPollSeconds = 15 * 60
+function pollInterval(baseSeconds, state) {
+  var base = finite(baseSeconds) ? Math.max(30, Math.min(900, Math.round(baseSeconds))) : 60
+  state = state || {}
+  if (state.locked) return state.lockSeconds || 60
+  if (state.open) return base
+  var report = state.report || blank("loading")
+  // No data yet: keep the configured pace until the first answer arrives.
+  if (!report.updatedAt) return report.status === "error" ? Math.max(base, soonPollSeconds) : base
+  var now = state.now || 0
+  var departures = upcoming(report, now, false)
+  // Every cached train has left: the list needs replacing now.
+  if (report.departures.length > 0 && departures.length === 0) return base
+  var first = next(departures) || departures[0]
+  if (!first) return Math.max(base, farPollSeconds)
+  var away = first.expected - now
+  if (away <= nearSeconds) return base
+  if (away <= soonSeconds) return Math.max(base, soonPollSeconds)
+  return Math.max(base, farPollSeconds)
+}
 function upcoming(report,now,isStale) { return isStale ? report.departures : report.departures.filter(function(d){return Math.max(d.expected,d.aimed)>=now-30}) }
 function next(departures) { return departures.find(function(d){return !d.cancelled}) || null }
 function minutes(d,now) { return Math.max(0,Math.ceil((d.expected-now)/60)) }
@@ -32,7 +67,8 @@ function durationParts(totalMinutes, language) {
   if (minutes || !hours) parts.push({value:minutes, unit:"min"})
   return parts
 }
-function duration(totalMinutes, language) {
-  return durationParts(totalMinutes, language).map(function(part) {return part.value + " " + part.unit}).join(" ")
+function duration(totalMinutes, language, format) {
+  format = format || String
+  return durationParts(totalMinutes, language).map(function(part) {return format(part.value) + " " + part.unit}).join(" ")
 }
-if(typeof module!=="undefined")module.exports={blank:blank,parse:parse,stale:stale,upcoming:upcoming,next:next,minutes:minutes,validStation:validStation,route:route,duration:duration,durationParts:durationParts}
+if(typeof module!=="undefined")module.exports={blank:blank,parse:parse,stale:stale,staleAfter:staleAfter,pollInterval:pollInterval,upcoming:upcoming,next:next,minutes:minutes,validStation:validStation,route:route,duration:duration,durationParts:durationParts}

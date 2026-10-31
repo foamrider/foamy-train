@@ -100,6 +100,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 bash tests/kit-check.sh
 python3 tests/i18n-runtime.py            # OMARCHY_PATH=<4.5 tree> for live language switching
 python3 tests/runtime.py both            # offscreen, needs foamy-kit (FOAMY_KIT)
+python3 tests/cursor.py both             # popup cursor vs the 1 s clock (offscreen)
 foamy-kit/preview/render.py . --host both
 foamy-kit/preview/render.py . --preview preview/BarPreview.qml
 ```

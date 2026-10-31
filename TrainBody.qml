@@ -43,23 +43,34 @@ PanelKeyCatcher {
   implicitHeight: editingSettings ? settingsPane.implicitHeight : view.implicitHeight
   blocked: editingSettings
 
-  readonly property string cursorKey: cursor.index >= 0 && cursor.index < view.stops.length ? view.stops[cursor.index] : ""
+  readonly property string cursorKey: keyAt(cursor.index)
+  // The stop the keyboard or pointer last chose. `stops` is rebuilt on every
+  // clock tick (TrainService.departures is a new array each second), and the
+  // cursor is put back on this key each time. Set only where a stop is
+  // chosen, from `stops` directly: reading the cursorKey binding from the
+  // cursor's own indexChanged handler can see the previous stop (the binding
+  // is not re-evaluated yet), and the next tick then sends the cursor back
+  // there, so it ping-ponged between the last two stops once a second.
   property string heldKey: ""
+  function keyAt(index) { return index >= 0 && index < view.stops.length ? view.stops[index] : "" }
+  function hold() { heldKey = keyAt(cursor.index) }
 
   FoamyCursor {
     id: cursor
     count: view.stops.length
-    onIndexChanged: root.heldKey = root.cursorKey
   }
-  // Keep the cursor on the same stop when a refresh reorders the stops.
+  // Keep the cursor on the same stop when a tick or refresh rebuilds the
+  // stops; drop it when that stop is gone.
   Connections {
     target: view
     function onStopsChanged() {
-      if (root.heldKey !== "") cursor.index = view.stops.indexOf(root.heldKey)
+      if (root.heldKey === "") return
+      cursor.index = view.stops.indexOf(root.heldKey)
+      if (cursor.index < 0) root.heldKey = ""
     }
   }
 
-  onMoveRequested: function(dx, dy) { cursor.move(dy !== 0 ? dy : dx) }
+  onMoveRequested: function(dx, dy) { cursor.move(dy !== 0 ? dy : dx); hold() }
   onActivateRequested: view.activate(root.cursorKey)
   onCloseRequested: root.closeRequestedByView()
   onTabRequested: function(direction) { root.switchPanelRequested(direction) }
@@ -78,7 +89,7 @@ PanelKeyCatcher {
       Qt.callLater(root.forceActiveFocus)
     }
   }
-  onVisibleChanged: if (!visible) cursor.reset()
+  onVisibleChanged: if (!visible) { cursor.reset(); heldKey = "" }
 
   // The departures scroller (tests check that cursor stops stay visible).
   readonly property Flickable scroller: scroll
@@ -109,7 +120,7 @@ PanelKeyCatcher {
       outsideSchedule: root.outsideSchedule
       routeBusy: root.routeSaving
       cursorKey: root.cursorKey
-      onStopHovered: function(key) { cursor.hover(view.stops.indexOf(key)) }
+      onStopHovered: function(key) { cursor.hover(view.stops.indexOf(key)); root.hold() }
       onRevealRequested: function(item) {
         var point = item.mapToItem(view, 0, 0)
         var margin = FoamyStyle.gap

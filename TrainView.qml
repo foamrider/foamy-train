@@ -57,6 +57,8 @@ Column {
   signal refreshRequested()
   signal stopHovered(string key)
   signal revealRequested(Item item)
+  // A notice opened its detail: scroll it into view as it grows.
+  signal detailOpened(Item item)
 
   // Header and footer stops scroll into view here; notices reveal themselves.
   onCursorKeyChanged: {

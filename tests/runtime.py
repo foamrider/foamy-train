@@ -122,6 +122,15 @@ ShellRoot {
         check(body.cursorKey === "settings" && body.scroller.contentY === 0, "cursor back on Settings scrolls the header into view")
         body.moveRequested(0, 1); body.moveRequested(0, -1); body.moveRequested(0, -1)
         check(body.cursorKey === "swap" && body.scroller.contentY === 0, "cursor on Switch direction keeps the header visible")
+        // A mouse-wheel notch split 8 x 15 scrolls about three rows (FoamyWheelScroll).
+        var wheel = body.scrollerWheel
+        check(!!wheel && wheel.target === body.scroller, "the body scrolls with the kit wheel handling")
+        if (wheel) {
+          for (var n = 0; n < 8; n++) wheel.wheel({ angleDelta: Qt.point(0, -15), pixelDelta: Qt.point(0, 0) })
+          var to = isNaN(wheel.destination) ? body.scroller.contentY : wheel.destination
+          check(Math.abs(to - Math.min(wheel.notch, wheel.maxY)) < 1, "one wheel notch scrolls about three rows: " + to)
+          wheel.scrollTo(0, false)
+        }
         // Outside the schedule the band is only the title row; the paused
         // state is in the body under it.
         body.outsideSchedule = true

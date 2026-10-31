@@ -123,7 +123,16 @@ FoamySettingsPage {
     }
   }
 
+  // Turning the schedule on scrolls the new day rows into view.
+  property bool revealSchedule: false
+  readonly property bool scheduleOn: value("scheduleEnabled") === true
+  onScheduleOnChanged: if (scheduleOn && revealSchedule) {
+    revealSchedule = false
+    Qt.callLater(function() { root.ensureVisible(scheduleSection) })
+  }
+
   FoamySettingsSection {
+    id: scheduleSection
     width: parent.width
     title: FoamyI18n.t("Schedule")
     description: root.value("scheduleEnabled") ? FoamyI18n.t("Local time. Turn a day off to skip it. Overnight ranges are supported.") : ""
@@ -133,7 +142,10 @@ FoamySettingsPage {
       label: FoamyI18n.t("Use a weekly schedule")
       checked: root.value("scheduleEnabled") === true
       enabled: !root.saving
-      onClicked: root.saveRequested("scheduleEnabled", !checked)
+      onClicked: {
+        root.revealSchedule = !checked
+        root.saveRequested("scheduleEnabled", !checked)
+      }
     }
     FoamyDropdown {
       objectName: "scheduleOutsideMode"

@@ -20,6 +20,7 @@ FoamyCursorSurface {
   implicitHeight: contents.implicitHeight + FoamyStyle.rowPadding * 2
   color: hasCursor ? FoamyPalette.hoverFill : filled ? Qt.alpha(FoamyPalette.text, 0.045) : "transparent"
   onHasCursorChanged: if (hasCursor && view) view.revealRequested(root)
+  onExpandedChanged: if (expanded && view) view.detailOpened(root)
   onHovered: if (expandable && view) view.stopHovered(cursorKey)
   onClicked: if (expandable && view) view.toggle(cursorKey)
 

@@ -80,7 +80,7 @@ PanelKeyCatcher {
   }
 
   onEditingSettingsChanged: {
-    scroll.contentY = 0
+    wheel.scrollTo(0, false)
     if (editingSettings) {
       settingsPane.resetRoute()
       settingsPane.resetScroll()
@@ -93,6 +93,7 @@ PanelKeyCatcher {
 
   // The departures scroller (tests check that cursor stops stay visible).
   readonly property Flickable scroller: scroll
+  readonly property QtObject scrollerWheel: wheel
 
   Flickable {
     id: scroll
@@ -128,11 +129,15 @@ PanelKeyCatcher {
         else if (point.y + item.height > scroll.contentY + scroll.height)
           scroll.contentY = Math.max(0, Math.min(scroll.contentHeight - scroll.height, point.y + item.height - scroll.height + margin))
       }
+      onDetailOpened: function(item) { wheel.ensureVisible(item) }
       onSettingsRequested: root.settingsRequested()
       onSwapRequested: root.swapRequested()
       onRefreshRequested: root.refreshRequested()
     }
   }
+
+  // A wheel notch scrolls about three rows, however the mouse splits it.
+  FoamyWheelScroll { id: wheel; target: scroll }
 
   SettingsPane {
     id: settingsPane

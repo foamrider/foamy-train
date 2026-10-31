@@ -96,6 +96,7 @@ FoamySettingsPage {
     FoamyDropdown {
       objectName: "lookAheadHours"
       width: parent.width
+      compact: true
       label: FoamyI18n.t("Show trains in the next")
       value: String(root.value("lookAheadHours"))
       enabled: !root.saving
@@ -113,6 +114,7 @@ FoamySettingsPage {
     FoamyDropdown {
       objectName: "refreshSeconds"
       width: parent.width
+      compact: true
       label: FoamyI18n.t("Refresh every")
       value: String(root.value("refreshSeconds"))
       enabled: !root.saving
@@ -151,6 +153,7 @@ FoamySettingsPage {
       objectName: "scheduleOutsideMode"
       visible: root.value("scheduleEnabled")
       width: parent.width
+      compact: true
       label: FoamyI18n.t("Outside the schedule")
       value: root.value("scheduleOutsideMode")
       enabled: !root.saving

@@ -105,14 +105,17 @@ Column {
     ]
 
     // Hero: the next departure (countdown, destination, line and time), or
-    // the empty / paused state.
+    // why there is none. Outside the schedule the band is just the title row
+    // and the paused state sits in the body below (a zero-height hero slot
+    // takes no room in the band).
     Column {
       id: hero
+      visible: !root.paused
       Layout.fillWidth: true
       spacing: FoamyStyle.gap
 
       Column {
-        visible: !!root.next && !root.paused
+        visible: !!root.next
         width: parent.width
         spacing: FoamyStyle.gapSmall
         Row {
@@ -183,16 +186,17 @@ Column {
         }
       }
 
+      // No next train. The route is already the band's meta line.
       Column {
-        visible: !root.next || root.paused
+        visible: !root.next
         width: parent.width
         spacing: FoamyStyle.gap
         FoamyIcon {
-          objectName: root.paused ? "sleepIcon" : "emptyIcon"
+          objectName: "emptyIcon"
           anchors.horizontalCenter: parent.horizontalCenter
           width: Style.space(28)
           height: width
-          name: root.paused ? "moon" : "train"
+          name: "train"
           color: FoamyPalette.secondaryText
         }
         TrainText {
@@ -200,21 +204,13 @@ Column {
           horizontalAlignment: Text.AlignHCenter
           font.pixelSize: FoamyStyle.font.heading
           text: root.unconfigured ? FoamyI18n.t("Choose your stations")
-                : root.paused ? FoamyI18n.t("Outside your schedule")
                 : root.loading ? FoamyI18n.t("Loading departures…")
                 : root.report.status === "error" ? FoamyI18n.t("No departures available")
                 : root.departures.length ? FoamyI18n.t("All upcoming trains are cancelled")
                 : FoamyI18n.t("No direct trains found")
         }
         TrainText {
-          visible: !!root.report.route
-          width: parent.width
-          horizontalAlignment: Text.AlignHCenter
-          color: FoamyPalette.secondaryText
-          text: root.report.route ? FoamyI18n.t("To") + " " + root.report.route.to.name : ""
-        }
-        TrainText {
-          visible: root.unconfigured && !root.paused
+          visible: root.unconfigured
           width: parent.width
           horizontalAlignment: Text.AlignHCenter
           color: FoamyPalette.mutedText
@@ -233,6 +229,33 @@ Column {
           onClicked: root.settingsRequested()
         }
       }
+    }
+  }
+
+  // Outside the schedule: an empty state in the body, under the title band.
+  Column {
+    objectName: "pausedState"
+    visible: root.paused
+    width: parent.width
+    topPadding: Style.space(32)
+    bottomPadding: Style.space(36)
+    leftPadding: FoamyStyle.padding
+    rightPadding: FoamyStyle.padding
+    spacing: FoamyStyle.gapLarge
+    FoamyIcon {
+      objectName: "sleepIcon"
+      anchors.horizontalCenter: parent.horizontalCenter
+      width: Style.space(24)
+      height: width
+      name: "moon"
+      color: FoamyPalette.mutedText
+    }
+    TrainText {
+      width: parent.width - parent.leftPadding - parent.rightPadding
+      horizontalAlignment: Text.AlignHCenter
+      text: FoamyI18n.t("Outside your schedule")
+      color: FoamyPalette.mutedText
+      font.pixelSize: FoamyStyle.font.bodySmall
     }
   }
 

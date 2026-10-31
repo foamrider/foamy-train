@@ -3,7 +3,8 @@
 two bar instances share one TrainService (leader configures it), the 4.5
 in-process `lock isLocked` probe pauses polling while locked, the route
 reaches the helper on stdin (never argv), popup demand switches the clock
-to seconds, settings saves keep the route, and invalid values are refused.
+to seconds, settings saves keep the route, invalid values are refused, and
+outside the schedule the band is only the title row with the paused state below.
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
@@ -28,6 +29,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import "harness"
+import "plugin/kit"
 import "plugin" as Train
 import "plugin/tests/Fixtures.js" as Fixtures
 
@@ -120,6 +122,21 @@ ShellRoot {
         check(body.cursorKey === "settings" && body.scroller.contentY === 0, "cursor back on Settings scrolls the header into view")
         body.moveRequested(0, 1); body.moveRequested(0, -1); body.moveRequested(0, -1)
         check(body.cursorKey === "swap" && body.scroller.contentY === 0, "cursor on Switch direction keeps the header visible")
+        // Outside the schedule the band is only the title row; the paused
+        // state is in the body under it.
+        body.outsideSchedule = true
+        break
+      case 6:
+        var view = body.scroller.contentItem.children[0]
+        var band = null, paused = null
+        for (var i = 0; i < view.children.length; i++) {
+          if (view.children[i].objectName === "heroBand") band = view.children[i]
+          if (view.children[i].objectName === "pausedState") paused = view.children[i]
+        }
+        check(band && Math.abs(band.height - (FoamyStyle.bandPaddingTop + band.titleRow.height + FoamyStyle.bandPaddingBottom)) <= 1,
+              "paused band holds just the title row (" + (band ? band.height : "?") + ")")
+        check(paused && paused.visible && paused.y >= band.height, "paused state sits in the body below the band")
+        check(view.stops.join(",") === "swap,settings", "paused stops: Switch direction and Settings")
         console.log("FOAMY DONE")
         Qt.quit()
       }

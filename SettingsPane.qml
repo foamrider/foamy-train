@@ -61,10 +61,10 @@ FoamySettingsPage {
       enabled: !root.routeSaving
       onChanged: root.saveRoute()
     }
-    FoamyAction {
+    FoamyButton {
+      objectName: "swapRoute"
       iconName: "swap"
-      label: FoamyI18n.t("Switch direction")
-      foreground: FoamyPalette.secondaryText
+      text: FoamyI18n.t("Switch direction")
       focusable: true
       enabled: !root.routeSaving
       onClicked: {

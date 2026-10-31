@@ -89,6 +89,8 @@ the plugin in English.
 
 ## Development
 
+`kit/` holds shared components copied from [foamy-kit](https://github.com/foamrider/foamy-kit); edit them there, not here.
+
 Shared foamy components live in `kit/` (copied from
 [foamy-kit](https://github.com/foamrider/foamy-kit); never edit them here).
 

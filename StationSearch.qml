@@ -52,6 +52,7 @@ Column {
     text: root.label
     color: FoamyPalette.secondaryText
     font.pixelSize: FoamyStyle.font.bodySmall
+    font.bold: true
   }
   SafeTextField {
     id: input

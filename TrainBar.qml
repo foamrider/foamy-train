@@ -1,11 +1,13 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
+import "kit"
 import "Model.js" as Model
 
 Row {
   id: root
-  property color foreground: Color.foreground
+  property color foreground: Commons.Color.foreground
   property string iconFontFamily: Style.font.family
   property real fontSize: Style.font.body
   property bool showMinutes: true
@@ -25,31 +27,36 @@ Row {
     // Departure information belongs to the train shown by the countdown.
     || (next !== null && next.notices.some(function(n) {return n.kind === "info"}))
   readonly property bool hasDelay: departures.some(function(d) {return !d.cancelled && d.delay > 0})
-  readonly property color warning: Color.background.hslLightness > 0.5 ? "#86601b" : "#d7b56d"
+  // Theme yellow on the bar surface (the bar has its own background).
+  readonly property color warning: FoamyPalette.warning
   // The countdown color describes only the next train. Other affected departures use a notice marker.
   readonly property bool otherDelay: departures.some(function(d) {return !d.cancelled && d.delay > 0 && (!root.next || d.id !== root.next.id)})
   readonly property string noticeIcon: !live ? "" : hasCancellation ? "cancelled"
     : hasWarning || otherDelay || (hasDelay && (!showMinutes || vertical)) ? "warning" : hasInfo ? "info" : ""
+  function noticeColor(icon) {
+    return icon === "cancelled" ? Commons.Color.urgent : icon === "info" ? Commons.Color.accent : root.warning
+  }
   spacing: Style.space(4)
   OpticalGlyph {
     id: trainGlyph
     width: Style.bar.iconCanvas
     height: width
-    text: "󰔬"
+    text: "\u{f052c}"
     fontFamily: root.iconFontFamily
     fontSize: Style.font.body
-    color: root.vertical && root.live && root.noticeIcon !== "" ? (root.noticeIcon === "cancelled" ? Color.urgent : root.noticeIcon === "info" ? Color.accent : root.warning) : root.foreground
+    color: root.vertical && root.live && root.noticeIcon !== "" ? root.noticeColor(root.noticeIcon) : root.foreground
   }
   Text {
     objectName: "barCountdown"
     visible: root.showMinutes && !root.vertical && root.withinSchedule
     anchors.verticalCenter: parent.verticalCenter
-    text: root.stale ? "—" : root.next ? Model.duration(Model.minutes(root.next, root.nowEpoch), root.language) : "—"
+    text: root.stale || !root.next ? "—" : Model.duration(Model.minutes(root.next, root.nowEpoch), root.language, function(v) { return FoamyI18n.number(v, 0) })
+    textFormat: Text.PlainText
     color: root.live && root.next && root.next.delay > 0 ? root.warning : root.foreground
-    font.family: "sans-serif"
+    font.family: FoamyStyle.fontFamily
     font.pixelSize: root.fontSize
   }
-  TrainIcon {
+  FoamyIcon {
     objectName: "barNotice"
     visible: root.noticeIcon !== "" && !root.vertical
     anchors.verticalCenter: parent.verticalCenter
@@ -57,7 +64,8 @@ Row {
     anchors.verticalCenterOffset: -Style.space(1)
     width: trainGlyph.fontSize
     height: width
-    name: root.noticeIcon
-    color: root.noticeIcon === "cancelled" ? Color.urgent : root.noticeIcon === "info" ? Color.accent : root.warning
+    // noticeIcon is the notice kind; information uses the megaphone shape.
+    name: root.noticeIcon === "info" || root.noticeIcon === "" ? "megaphone" : root.noticeIcon
+    color: root.noticeColor(root.noticeIcon)
   }
 }

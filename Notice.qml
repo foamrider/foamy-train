@@ -1,75 +1,69 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
+import qs.Commons as Commons
+import "kit"
 
-Rectangle {
+// A service notice. With detail text it is a cursor stop in the popup and
+// expands on click, Enter or Space (the view owns cursor and expanded state).
+FoamyCursorSurface {
   id: root
   required property var notice
-  property bool expanded: false
   property bool cancelled: false
   property bool filled: false
-  property color warning: Color.popups.background.hslLightness > 0.5 ? "#86601b" : "#d7b56d"
-  readonly property color secondary: Qt.tint(Color.popups.background, Qt.alpha(Color.popups.text, 0.72))
-  implicitHeight: contents.implicitHeight + Style.space(18)
-  radius: Style.cornerRadius * 2
-  color: filled ? Qt.alpha(Color.popups.text, 0.045) : "transparent"
-  border.width: activeFocus ? 1 : 0
-  border.color: Color.accent
-  activeFocusOnTab: notice.detail !== ""
-  Accessible.role: Accessible.Button
+  property string cursorKey: ""
+  property Item view: null
+  readonly property bool expandable: notice.detail !== ""
+  readonly property bool expanded: !!view && !!view.expanded[cursorKey]
+
+  hasCursor: expandable && !!view && view.cursorKey === cursorKey
+  implicitHeight: contents.implicitHeight + FoamyStyle.rowPadding * 2
+  color: hasCursor ? FoamyPalette.hoverFill : filled ? Qt.alpha(FoamyPalette.text, 0.045) : "transparent"
+  onHasCursorChanged: if (hasCursor && view) view.revealRequested(root)
+  onHovered: if (expandable && view) view.stopHovered(cursorKey)
+  onClicked: if (expandable && view) view.toggle(cursorKey)
+
+  Accessible.role: expandable ? Accessible.Button : Accessible.StaticText
   Accessible.name: notice.summary
   Accessible.description: expanded ? notice.detail : ""
-  Accessible.onPressAction: if (notice.detail)
-                              expanded = !expanded
-  Keys.onSpacePressed: if (notice.detail)
-                         expanded = !expanded
-  Keys.onReturnPressed: if (notice.detail)
-                          expanded = !expanded
-  Keys.onEnterPressed: if (notice.detail)
-                         expanded = !expanded
+  Accessible.onPressAction: if (expandable && view) view.toggle(cursorKey)
+
   Column {
     id: contents
-    x: Style.space(10)
-    y: Style.space(9)
-    width: parent.width - Style.space(20)
-    spacing: Style.space(9)
+    x: FoamyStyle.rowPadding
+    y: FoamyStyle.rowPadding
+    width: parent.width - FoamyStyle.rowPadding * 2
+    spacing: FoamyStyle.gap
     RowLayout {
       width: parent.width
-      spacing: Style.space(8)
-      TrainIcon {
+      spacing: FoamyStyle.gap
+      FoamyIcon {
         Layout.alignment: Qt.AlignVCenter
-        width: Style.space(15)
-        height: width
-        name: root.cancelled && root.notice.kind === "warning" ? "cancelled" : root.notice.kind
-        color: root.notice.kind === "info" ? Color.accent : root.cancelled ? Color.urgent : root.warning
+        Layout.preferredWidth: FoamyStyle.iconSize
+        Layout.preferredHeight: FoamyStyle.iconSize
+        // Information notices keep the announcement (megaphone) shape.
+        name: root.notice.kind === "info" ? "megaphone" : root.cancelled ? "cancelled" : "warning"
+        color: root.notice.kind === "info" ? Commons.Color.accent
+               : root.cancelled ? Commons.Color.urgent : FoamyPalette.onSurface(FoamyPalette.warning)
       }
       TrainText {
         Layout.fillWidth: true
         text: (root.notice.scopeLabel ? root.notice.scopeLabel + " · " : "") + root.notice.summary
-        color: root.secondary
+        color: FoamyPalette.secondaryText
       }
-      TrainIcon {
-        visible: root.notice.detail !== ""
-        width: Style.space(13)
-        height: width
+      FoamyIcon {
+        visible: root.expandable
+        Layout.preferredWidth: Style.space(13)
+        Layout.preferredHeight: Style.space(13)
         name: root.expanded ? "chevron-down" : "chevron-right"
-        color: root.secondary
+        color: FoamyPalette.secondaryText
       }
     }
     TrainText {
-      visible: root.expanded && root.notice.detail !== ""
+      visible: root.expanded && root.expandable
       width: parent.width
       text: root.notice.detail
-      color: root.secondary
-    }
-  }
-  MouseArea {
-    anchors.fill: parent
-    enabled: root.notice.detail !== ""
-    cursorShape: Qt.PointingHandCursor
-    onClicked: {
-      root.forceActiveFocus()
-      root.expanded = !root.expanded
+      color: FoamyPalette.secondaryText
     }
   }
 }

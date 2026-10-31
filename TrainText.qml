@@ -1,9 +1,12 @@
 import QtQuick
-import qs.Commons
+import "kit"
+
+// Popup text: plain text only (Entur data never renders as markup).
 Text {
-  color: Color.popups.text
-  font.family: "sans-serif"
-  font.pixelSize: Style.space(12)
+  color: FoamyPalette.text
+  font.family: FoamyStyle.fontFamily
+  font.pixelSize: FoamyStyle.font.body
   textFormat: Text.PlainText
   wrapMode: Text.WordWrap
+  horizontalAlignment: Text.AlignLeft
 }

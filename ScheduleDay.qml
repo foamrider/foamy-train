@@ -1,10 +1,13 @@
 import QtQuick
-import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
+import "kit"
 import "Schedule.js" as Schedule
 
+// One weekday of the schedule: on/off switch plus from/to times (local time;
+// "24:00" ends at midnight, overnight ranges carry into the next day).
 RowLayout {
   id: root
   property string label: ""
@@ -15,17 +18,17 @@ RowLayout {
   readonly property bool dayEnabled: value !== ""
   signal changed(string value)
   signal invalid()
-  spacing: Style.space(6)
+  spacing: FoamyStyle.gap
   function restoreInputs(force) {
     if (value !== "" && Schedule.validRange(value)) lastRange = value
     var parts = lastRange.split("-")
-    if (force || !fromInput.activeFocus) fromInput.text = parts[0]
-    if (force || !toInput.activeFocus) toInput.text = parts[1]
+    if (force || !fromInput.inputActiveFocus) fromInput.text = parts[0]
+    if (force || !toInput.inputActiveFocus) toInput.text = parts[1]
   }
   function saveInputs() {
     if (!dayEnabled) return
     var range = fromInput.text.trim() + "-" + toInput.text.trim()
-    if (!Schedule.validRange(range)) {invalid();return}
+    if (!Schedule.validRange(range)) { invalid(); return }
     if (range !== value) changed(range)
   }
   onValueChanged: restoreInputs()
@@ -33,13 +36,13 @@ RowLayout {
   TrainText {
     Layout.fillWidth: true
     text: root.label
-    font.pixelSize: Style.space(12)
   }
   ToggleSwitch {
+    id: daySwitch
     objectName: "daySwitch"
     checked: root.dayEnabled
     trackHeight: Style.space(17)
-    foreground: Color.popups.text
+    foreground: Commons.Color.popups.text
     activeFocusOnTab: true
     Accessible.role: Accessible.CheckBox
     Accessible.name: root.label
@@ -49,42 +52,48 @@ RowLayout {
     Keys.onReturnPressed: toggled()
     Keys.onEnterPressed: toggled()
     onToggled: root.changed(checked ? "" : root.lastRange)
-    Rectangle {anchors.fill:parent;color:"transparent";radius:Style.cornerRadius * 2;border.width:parent.activeFocus?1:0;border.color:Color.accent}
+    Rectangle {
+      anchors.fill: parent
+      color: "transparent"
+      radius: FoamyStyle.radius
+      border.width: daySwitch.activeFocus ? 1 : 0
+      border.color: Commons.Color.accent
+    }
   }
-  Controls.TextField {
+  SafeTextField {
     id: fromInput
     objectName: "fromTime"
-    Layout.preferredWidth: Style.space(58)
-    implicitHeight: Style.space(32)
+    Layout.preferredWidth: Style.space(64)
     enabled: root.dayEnabled
-    opacity: enabled ? 1 : 0.4
-    color: Color.popups.text
-    font.family: "sans-serif"
-    font.pixelSize: Style.space(12)
-    padding: Style.space(6)
-    selectByMouse: true
+    opacity: enabled ? 1 : FoamyStyle.disabledOpacity
+    horizontalAlignment: Text.AlignHCenter
     maximumLength: 5
+    translate: FoamyI18n.t
     Accessible.name: root.label + " · " + root.fromLabel
-    background: Rectangle {radius:Style.cornerRadius * 2;color:Qt.alpha(Color.popups.text,0.055);border.width:fromInput.activeFocus?1:0;border.color:Color.accent}
     onEditingFinished: root.saveInputs()
-    Keys.onEscapePressed: root.restoreInputs(true)
+    onKeyPressed: function(event) {
+      if (event.key === Qt.Key_Escape) {
+        root.restoreInputs(true)
+        event.accepted = true
+      }
+    }
   }
-  Controls.TextField {
+  SafeTextField {
     id: toInput
     objectName: "toTime"
-    Layout.preferredWidth: Style.space(58)
-    implicitHeight: Style.space(32)
+    Layout.preferredWidth: Style.space(64)
     enabled: root.dayEnabled
-    opacity: enabled ? 1 : 0.4
-    color: Color.popups.text
-    font.family: "sans-serif"
-    font.pixelSize: Style.space(12)
-    padding: Style.space(6)
-    selectByMouse: true
+    opacity: enabled ? 1 : FoamyStyle.disabledOpacity
+    horizontalAlignment: Text.AlignHCenter
     maximumLength: 5
+    translate: FoamyI18n.t
     Accessible.name: root.label + " · " + root.toLabel
-    background: Rectangle {radius:Style.cornerRadius * 2;color:Qt.alpha(Color.popups.text,0.055);border.width:toInput.activeFocus?1:0;border.color:Color.accent}
     onEditingFinished: root.saveInputs()
-    Keys.onEscapePressed: root.restoreInputs(true)
+    onKeyPressed: function(event) {
+      if (event.key === Qt.Key_Escape) {
+        root.restoreInputs(true)
+        event.accepted = true
+      }
+    }
   }
 }

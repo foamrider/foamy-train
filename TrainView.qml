@@ -32,8 +32,7 @@ Column {
   function formatNumber(value) { return FoamyI18n.number(value, 0) }
   function durationText(minutes) { return Model.duration(minutes, root.language, root.formatNumber) }
   function updatedText() {
-    var minutes = Math.max(0, Math.floor((nowEpoch - report.updatedAt) / 60))
-    return minutes === 0 ? FoamyI18n.t("Updated just now") : FoamyI18n.tn("Updated %1 minutes ago", minutes)
+    return FoamyI18n.updatedAgo(report.updatedAt * 1000, nowEpoch * 1000)
   }
   function noticeStops(prefix, notices) {
     return notices.filter(function(n) { return n.detail !== "" }).map(function(n) { return prefix + n.id })

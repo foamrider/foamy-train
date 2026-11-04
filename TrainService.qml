@@ -40,8 +40,8 @@ QtObject {
   property string language: "en"
 
   // --- clock: whole minutes while every popup is closed (the bar shows minutes) ---
-  property SystemClock clock: SystemClock {
-    precision: root.demanded ? SystemClock.Seconds : SystemClock.Minutes
+  property FoamyWallClock clock: FoamyWallClock {
+    step: root.demanded ? 1000 : 60000
   }
   readonly property real nowEpoch: clock.date.getTime() / 1000
   readonly property bool withinSchedule: Schedule.withinWeek(clock.date, scheduleEnabled, week)

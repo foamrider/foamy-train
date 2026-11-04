@@ -69,7 +69,7 @@ ShellRoot {
       case 0:
         check(s.active && s.configured, "service active and configured by the leader")
         check(s.refreshSeconds === 300 && s.route && s.route.from.name === "Oslo S", "leader pushed its settings")
-        check(s.clock.precision === SystemClock.Minutes, "minute clock while every popup is closed")
+        check(s.clock.step === 60000, "minute clock while every popup is closed")
         s.statusProcess.running = false
         break
       case 1:
@@ -98,7 +98,7 @@ ShellRoot {
         a.open()
         break
       case 4:
-        check(s.demanded && s.clock.precision === SystemClock.Seconds, "open popup raises demand and second precision")
+        check(s.demanded && s.clock.step === 1000, "open popup raises demand and second precision")
         check(s.pollInterval === 300, "open popup polls at the configured interval")
         a.save("refreshSeconds", 600)
         var saved = bar.saved[bar.saved.length - 1]

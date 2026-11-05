@@ -268,6 +268,8 @@ Column {
     width: parent.width
     padding: FoamyStyle.padding
     topPadding: FoamyStyle.sectionGap
+    // The footer row is last: as far above the bottom as under its hairline.
+    bottomPadding: spacing
     spacing: FoamyStyle.font.heading
     readonly property real innerWidth: width - padding * 2
 

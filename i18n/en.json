@@ -65,6 +65,7 @@
   "Could not save the local cache.": "Could not save the local cache.",
   "Choose two different stations.": "Choose two different stations.",
   "Train request failed. Try Refresh.": "Train request failed. Try Refresh.",
+  "This plugin's helper isn't available for this CPU.": "This plugin's helper isn't available for this CPU.",
   "Invalid train response.": "Invalid train response.",
   "Station search failed. Try again.": "Station search failed. Try again.",
   "Station search returned an invalid response.": "Station search returned an invalid response.",

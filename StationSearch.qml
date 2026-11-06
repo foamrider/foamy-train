@@ -3,6 +3,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 import "kit"
+import "kit/FoamyNative.js" as FoamyNative
 import "Model.js" as Model
 
 // Station search for the settings page: a SafeTextField (bounded,
@@ -12,7 +13,8 @@ Column {
   property string label: ""
   property string language: "en"
   property var selected: null
-  property string helperPath: ""
+  // The plugin directory; the search runs bin/<arch>/foamy-train-helper.
+  property string pluginDir: ""
   property var results: []
   property string error: ""
   property string requestedText: ""
@@ -44,7 +46,8 @@ Column {
     requestedText = input.text
     requestedRevision = revision
     // `--search=` keeps a query that starts with "-" from parsing as an option.
-    process.command = ["timeout", "--kill-after=2s", "18s", "python3", helperPath, "--search=" + requestedText]
+    process.command = ["timeout", "--kill-after=2s", "18s"].concat(
+      FoamyNative.command(pluginDir, "foamy-train-helper", ["--search=" + requestedText]))
     process.running = true
   }
   spacing: FoamyStyle.gapSmall
@@ -144,6 +147,11 @@ Column {
         return
       }
       root.searching = false
+      if (FoamyNative.unavailable(code)) {
+        // No helper for this CPU: say so; searches only run on typing, never retried.
+        root.error = FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT)
+        return
+      }
       try {
         if (code !== 0) throw Error("search failed")
         var data = JSON.parse(output.text)

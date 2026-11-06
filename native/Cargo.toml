@@ -1,0 +1,24 @@
+[package]
+name = "foamy-train-helper"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Each dependency is justified in the PR; keep the list short.
+[dependencies]
+# Bounded reads and the atomic cache write.
+foamy-helper = { path = "../kit/rust/foamy-helper" }
+# Europe/Oslo wall-clock times from the system tzdb (TZif parsing only; no bundled database).
+jiff = { version = "0.2", default-features = false, features = ["std"] }
+# SHA-256 for the cache file names, and the crypto provider behind rustls.
+ring = { version = "0.17", default-features = false }
+# TLS for https://api.entur.io; the trust store comes from rustls-native-certs.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8"
+# Already in the tree through serde_json; named for its Serialize trait (the Python output format).
+serde = { version = "1", default-features = false, features = ["std"] }
+# preserve_order: replies and cache files keep the Python helper's key order.
+serde_json = { version = "1", features = ["preserve_order"] }
+# Blocking HTTP/1.1 with CONNECT proxies, redirects and a global deadline.
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider"] }

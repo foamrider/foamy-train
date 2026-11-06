@@ -23,7 +23,7 @@ PanelKeyCatcher {
   property bool outsideSchedule: false
   property var route: null
   property var settings: ({})
-  property string helperPath: ""
+  property string pluginDir: ""
   property bool editingSettings: false
   property bool saving: false
   property bool routeSaving: false
@@ -147,7 +147,7 @@ PanelKeyCatcher {
     route: root.route
     settings: root.settings
     language: root.language
-    helperPath: root.helperPath
+    pluginDir: root.pluginDir
     saving: root.saving
     routeSaving: root.routeSaving
     error: root.settingsError

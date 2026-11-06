@@ -166,7 +166,7 @@ Panel {
         outsideSchedule: !TrainService.withinSchedule
         route: TrainService.route
         settings: root.effectiveSettings
-        helperPath: TrainService.helperPath
+        pluginDir: TrainService.pluginDir
         editingSettings: root.editingSettings
         saving: root.saving
         routeSaving: root.routeSaving

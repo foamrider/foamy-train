@@ -93,6 +93,7 @@ ShellRoot {
         if (s.loading || s.lockProbing) { shell.step--; break }
         var argv = s.statusProcess.command.join(" ")
         check(argv.indexOf("--route-stdin") >= 0 && argv.indexOf("NSR:") < 0 && argv.indexOf("Oslo") < 0, "route is not in argv")
+        check(argv.indexOf("timeout --kill-after=2s 18s bash -c") === 0 && argv.indexOf("foamy-train-helper") >= 0, "the native helper runs under the widget timeout")
         check(s.report.route && s.report.route.to.name === "Lillestrøm", "helper received the route on stdin (" + s.report.status + "/" + s.report.errorCode + ")")
         check(s.report.errorCode === "offline", "sandbox fetch is offline (no network)")
         a.open()

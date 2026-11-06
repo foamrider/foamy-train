@@ -13,7 +13,7 @@ FoamySettingsPage {
   required property var settings
   required property string language
   property var route: null
-  property string helperPath: ""
+  property string pluginDir: ""
   property bool routeSaving: false
   signal saveRequested(string key, var value)
 
@@ -47,7 +47,7 @@ FoamySettingsPage {
       width: parent.width
       label: FoamyI18n.t("From")
       language: root.language
-      helperPath: root.helperPath
+      pluginDir: root.pluginDir
       enabled: !root.routeSaving
       onChanged: root.saveRoute()
     }
@@ -57,7 +57,7 @@ FoamySettingsPage {
       width: parent.width
       label: FoamyI18n.t("To")
       language: root.language
-      helperPath: root.helperPath
+      pluginDir: root.pluginDir
       enabled: !root.routeSaving
       onChanged: root.saveRoute()
     }

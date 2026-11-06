@@ -15,9 +15,8 @@ on the loopback interface (http or https, `127.0.0.1`, `localhost` or
 
 FOAMY_HELPER is the helper's argv prefix as a JSON list (default: this
 machine's bin/<arch>/foamy-train-helper), e.g. the aarch64 build through qemu
-binfmt, or the Python helper while it still exists:
+binfmt:
   FOAMY_HELPER='["bin/aarch64/foamy-train-helper"]' python3 -m unittest discover -s tests -p 'test_*.py'
-  FOAMY_HELPER='["python3", "-I", "-B", "tests/python_helper.py"]' python3 -m unittest discover -s tests -p 'test_*.py'
 """
 import base64
 import hashlib
@@ -73,12 +72,11 @@ def helper_prefix():
         prefix = json.loads(os.environ["FOAMY_HELPER"])
     else:
         prefix = [str(PLUGIN / "bin" / platform.machine() / "foamy-train-helper")]
-    # Resolve the program now: the helper runs with an empty PATH (and a
-    # temporary working directory, so relative paths are the plugin's).
+    # Resolve the program now: the helper runs with an empty PATH in a
+    # temporary working directory, so a relative path is the plugin's.
     program = prefix[0] if "/" in prefix[0] else shutil.which(prefix[0])
     if program and not Path(program).is_absolute():
         program = str(PLUGIN / program)
-    prefix = [*prefix[:1], *(str(PLUGIN / a) if a.startswith("tests/") else a for a in prefix[1:])]
     if not program:
         raise RuntimeError(f"helper program not found: {prefix[0]}")
     return [str(Path(program).resolve()), *prefix[1:]]

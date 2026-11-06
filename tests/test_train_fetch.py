@@ -1,264 +1,581 @@
+"""Black-box tests of the departure helper: it runs as a process against a
+local fake Entur (tests/fake_entur.py) with temporary HOME/XDG directories
+and an empty PATH. Nothing here contacts Entur.
+
+FOAMY_HELPER selects the helper (a JSON argv prefix); see fake_entur.py.
+"""
 import copy
-import importlib.util
 import json
-import os
-from pathlib import Path
 import stat
 import tempfile
+import time
 import unittest
-from unittest.mock import patch
 
-SPEC = importlib.util.spec_from_file_location("train_fetch", Path(__file__).parents[1] / "train_fetch.py")
-train = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(train)
-ROUTE = {"from": {"id": "NSR:StopPlace:1", "name": "Central"}, "to": {"id": "NSR:StopPlace:2", "name": "Airport"}}
-NOW = train.timestamp("2026-09-26T09:04:00+02:00")
+from fake_entur import (API_PATH, CLIENT, DEPARTURE_KEYS, GEOCODER_PATH, QUERY, REPORT_KEYS, ROUTE, CertAuthority,
+                        FakeEntur, FakeProxy, Helper, Reply, base_time, basic, busy, cache_name, feature, hm, iso, leg,
+                        notice, on_time, python_json, temporary, trips)
 
-
-def leg(**changes):
-    value = {"id": "train-1", "mode": "rail", "aimedStartTime": "2026-09-26T09:12:00+02:00",
-             "expectedStartTime": "2026-09-26T09:15:00+02:00", "aimedEndTime": "2026-09-26T09:22:00+02:00",
-             "expectedEndTime": "2026-09-26T09:25:00+02:00", "line": {"publicCode": "R10"},
-             "fromEstimatedCall": {"cancellation": False, "realtime": True, "quay": {"publicCode": "11"}},
-             "toEstimatedCall": {"cancellation": False}, "situations": []}
-    value.update(changes)
-    return value
+INVALID = "Entur returned an invalid response. Try Refresh."
 
 
-def response(*legs):
-    return {"data": {"trip": {"tripPatterns": [{"legs": [value]} for value in legs]}}}
+class Case(unittest.TestCase):
+    def setUp(self):
+        self.temp = temporary()
+        self.addCleanup(self.temp.cleanup)
+        self.entur = FakeEntur()
+        self.addCleanup(self.entur.close)
+        self.helper = Helper(self.temp.name, self.entur.url)
+
+    def fetch(self, *args, **kwargs):
+        return self.helper.fetch(*args, **kwargs)
+
+    def plan(self, *replies, args=("--force", "--hours", "3"), **kwargs):
+        """The report for queued planner answers, 3-hour look-ahead (one request)."""
+        self.entur.plan(*replies)
+        return self.fetch(*args, **kwargs)
+
+    def refused(self):
+        """A helper whose endpoint refuses connections."""
+        return Helper(tempfile.mkdtemp(dir=self.temp.name), "http://127.0.0.1:9")
 
 
-def notice(identifier="n1", **changes):
-    value = {"id": identifier, "reportType": "incident", "summary": [{"language": "en", "value": "Signal fault"}, {"language": "nb", "value": "Signalfeil"}],
-             "description": [{"language": "en", "value": "Allow more time."}], "affects": [{"__typename": "AffectedServiceJourney"}]}
-    value.update(changes)
-    return value
-
-
-class ParserTests(unittest.TestCase):
-    def parse(self, data, language="en"):
-        return train.parse_response(data, ROUTE, language, NOW)
-
+class ParserTests(Case):
     def test_window_uses_expected_time_and_includes_the_boundary(self):
-        boundary = leg(expectedStartTime="2026-09-26T10:04:00+02:00")
-        delayed_outside = leg(id="later", expectedStartTime="2026-09-26T10:04:01+02:00")
-        data = train.parse_response(response(boundary, delayed_outside), ROUTE, "en", NOW, 1)
+        now = int(time.time())
+        inside = on_time(now + 1800, expectedStartTime=iso(now + 3580))
+        outside = on_time(now + 1800, id="later", expectedStartTime=iso(now + 3640))
+        self.entur.fallback[API_PATH] = Reply(trips(inside, outside))
+        data = self.fetch("--force", "--hours", "1")
         self.assertEqual(len(data["departures"]), 1)
-        self.assertEqual(data["departures"][0]["expected"], NOW + 3600)
-        self.assertEqual(len(train.parse_response(response(boundary, delayed_outside), ROUTE, "en", NOW, 2)["departures"]), 2)
+        self.assertEqual(data["departures"][0]["expected"], now + 3580)
+        self.assertEqual(len(self.fetch("--force", "--hours", "2")["departures"]), 2)
+        self.assertEqual(self.entur.windows(), [60, 120])
 
-    def test_delay_arrival_platform_and_journey(self):
-        d = self.parse(response(leg()))["departures"][0]
-        self.assertEqual((d["delay"], d["duration"], d["platform"], d["arrivalTime"]), (3, 10, "11", "09:25"))
-        self.assertTrue(d["realtime"])
+    def test_departure_fields_and_report_shape(self):
+        start = base_time()
+        data = self.plan(trips(leg(start)))
+        self.assertEqual(list(data), REPORT_KEYS + ["searchHours"])
+        self.assertEqual((data["status"], data["route"], data["routeNotices"], data["stale"], data["error"],
+                          data["errorCode"], data["searchHours"]), ("ok", ROUTE, [], False, "", "", 3))
+        self.assertLessEqual(abs(data["updatedAt"] - time.time()), 5)
+        d = data["departures"][0]
+        self.assertEqual(list(d), DEPARTURE_KEYS)
+        self.assertEqual(d, {"id": f"train-1:{start}", "line": "R10", "aimed": start, "expected": start + 180,
+                             "arrival": start + 780, "aimedTime": hm(start), "expectedTime": hm(start + 180),
+                             "arrivalTime": hm(start + 780), "delay": 3, "duration": 10, "platform": "11",
+                             "realtime": True, "cancelled": False, "notices": []})
+
+    def test_times_are_oslo_wall_clock_whatever_the_offset_or_tz(self):
+        start = base_time()
+        utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start))
+        fraction = time.strftime("%Y-%m-%dT%H:%M:%S.250+00:00", time.gmtime(start + 180))
+        data = self.plan(trips(leg(start, aimedStartTime=utc, expectedStartTime=fraction)), env={"TZ": "Asia/Tokyo"})
+        d = data["departures"][0]
+        self.assertEqual((d["aimed"], d["expected"], d["aimedTime"], d["expectedTime"]),
+                         (start, start + 180, hm(start), hm(start + 180)))
 
     def test_filters_transfer_walk_and_bus(self):
-        data = response(leg(), leg(mode="bus"))
-        data["data"]["trip"]["tripPatterns"] += [{"legs": [leg(), leg(id="other")]}, {"legs": [{"mode": "foot"}, leg()]}]
-        self.assertEqual(len(self.parse(data)["departures"]), 1)
+        start = base_time()
+        data = trips(leg(start), leg(start, mode="bus"))
+        data["data"]["trip"]["tripPatterns"] += [{"legs": [leg(start), leg(start, id="other")]},
+                                                 {"legs": [{"mode": "foot"}, leg(start)]}, {"legs": []}]
+        self.assertEqual(len(self.plan(data)["departures"]), 1)
 
     def test_cancellation_at_either_end(self):
-        d = leg(toEstimatedCall={"cancellation": True})
-        self.assertTrue(self.parse(response(d))["departures"][0]["cancelled"])
+        start = base_time()
+        data = self.plan(trips(leg(start, toEstimatedCall={"cancellation": True}),
+                               leg(start + 60, id="b", fromEstimatedCall={"cancellation": True}),
+                               leg(start + 120, id="c", fromEstimatedCall={"cancellation": "yes"})))
+        self.assertEqual([d["cancelled"] for d in data["departures"]], [True, True, False])
 
     def test_repeated_notice_does_not_imply_route_scope(self):
-        data = self.parse(response(leg(situations=[notice()]), leg(id="train-2", situations=[notice()])))
+        start = base_time()
+        data = self.plan(trips(leg(start, situations=[notice()]), leg(start + 60, id="train-2", situations=[notice()])))
         self.assertEqual(data["routeNotices"], [])
         self.assertTrue(all(len(d["notices"]) == 1 for d in data["departures"]))
+        self.assertEqual(data["departures"][0]["notices"][0], {"id": "n1", "summary": "Signal fault",
+                                                               "detail": "Allow more time.", "kind": "warning",
+                                                               "scopeLabel": ""})
 
     def test_explicit_broad_notice_is_deduplicated_and_labelled(self):
-        n = notice(affects=[{"__typename": "AffectedLine", "line": {"publicCode": "R10"}}])
-        data = self.parse(response(leg(situations=[n]), leg(id="train-2", situations=[n])))
+        start = base_time()
+        n = notice(affects=[{"__typename": "AffectedLine", "line": {"publicCode": "R10"}},
+                            {"__typename": "AffectedStopPlace", "stopPlace": {"name": "Oslo S"}},
+                            {"__typename": "AffectedStopPlaceOnLine", "line": {"publicCode": "R10"}, "stopPlace": {}}])
+        data = self.plan(trips(leg(start, situations=[n]), leg(start + 60, id="train-2", situations=[n])))
         self.assertEqual(len(data["routeNotices"]), 1)
-        self.assertEqual(data["routeNotices"][0]["scopeLabel"], "R10")
+        self.assertEqual(data["routeNotices"][0]["scopeLabel"], "R10 · Oslo S")
         self.assertEqual(data["departures"][0]["notices"], [])
 
     def test_mixed_scope_remains_on_departure(self):
+        start = base_time()
         n = notice(affects=[{"__typename": "AffectedLine"}, {"__typename": "AffectedServiceJourney"}])
-        self.assertEqual(len(self.parse(response(leg(situations=[n])))["departures"][0]["notices"]), 1)
+        self.assertEqual(len(self.plan(trips(leg(start, situations=[n])))["departures"][0]["notices"]), 1)
+
+    def test_notices_from_the_leg_and_both_calls_are_merged_and_deduplicated(self):
+        start = base_time()
+        late = notice("c", summary=[], advice=[{"value": "Walk"}])
+        data = self.plan(trips(leg(start, situations=[notice("a")],
+                                   fromEstimatedCall={"situations": [notice("b"), notice("a")]},
+                                   toEstimatedCall={"situations": [late]})))
+        notices = data["departures"][0]["notices"]
+        self.assertEqual([n["id"] for n in notices], ["a", "b", "c"])
+        self.assertEqual((notices[2]["summary"], notices[2]["detail"]), ("Allow more time.", "Walk"))
 
     def test_info_without_delay_and_localization(self):
-        d = self.parse(response(leg(situations=[notice(reportType="general")], expectedStartTime="2026-09-26T09:12:00+02:00")), "nb")["departures"][0]
+        start = base_time()
+        n = notice(reportType="general", advice=[{"language": "no", "value": " Gå "}, {"language": "en", "value": "Walk"}])
+        args = ("--force", "--hours", "3", "--language", "nb")
+        d = self.plan(trips(on_time(start, situations=[n])), args=args)["departures"][0]
         self.assertEqual(d["delay"], 0)
         self.assertEqual(d["notices"][0]["kind"], "info")
         self.assertEqual(d["notices"][0]["summary"], "Signalfeil")
+        self.assertEqual(d["notices"][0]["detail"], "Allow more time.\n\nGå")
+
+    def test_notice_text_falls_back_and_identity_defaults_to_text(self):
+        start = base_time()
+        anonymous = {"summary": [{"language": "de", "value": "Störung"}], "description": [{"value": 5}, {"value": "Störung"}]}
+        empty = {"id": "e", "summary": [], "description": "text"}
+        d = self.plan(trips(leg(start, situations=[anonymous, empty, "x", None])))["departures"][0]
+        self.assertEqual(d["notices"], [{"id": "Störung", "summary": "Störung", "detail": "", "kind": "warning",
+                                         "scopeLabel": ""}])
 
     def test_empty_and_malformed_are_distinct(self):
-        self.assertEqual(self.parse(response())["status"], "ok")
-        for data in ({}, {"errors": [{"message": "bad"}]}, response(leg(expectedStartTime="bad")), response(leg(expectedStartTime="2026-09-26T09:12:00"))):
-            with self.assertRaises(train.TrainError):
-                self.parse(data)
+        # Failures write no cache, so each report is an error rather than stale.
+        start = base_time()
+        line_code = notice(affects=[{"__typename": "AffectedLine", "line": {"publicCode": 5}}])
+        malformed = [{}, {"data": None}, {"data": {"trip": {"tripPatterns": {}}}}, trips(leg(start, expectedStartTime="bad")),
+                     trips(leg(start, expectedStartTime=iso(start)[:19])), trips(leg(start, aimedStartTime=None)),
+                     {"data": {"trip": {"tripPatterns": ["x"]}}}, {"data": {"trip": {"tripPatterns": [{"legs": ["x"]}]}}},
+                     trips(leg(start, situations={"a": 1})), trips(leg(start, line="R10")),
+                     trips(leg(start, situations=[line_code])), trips(leg(start, situations=[notice(affects=7)]))]
+        for data in malformed:
+            with self.subTest(data=data):
+                report = self.plan(data)
+                self.assertEqual((report["status"], report["errorCode"], report["error"]), ("error", "invalid_response", INVALID))
+                self.assertEqual(report["route"], ROUTE)
+        for errors in ([{"message": "bad"}], "bad", {"a": 1}):
+            report = self.plan({"errors": errors, "data": {"trip": {"tripPatterns": []}}})
+            self.assertEqual((report["errorCode"], report["error"]), ("api_error", "Entur could not find departures. Try Refresh."))
+        self.assertEqual(self.plan({"errors": [], "data": {"trip": {"tripPatterns": []}}})["status"], "ok")
+        self.assertEqual(self.plan(trips())["status"], "ok")
+
+    def test_odd_but_valid_shapes_are_tolerated(self):
+        start = base_time()
+        data = self.plan(trips(leg(start, serviceJourney={"id": 42}, line=None, situations=None, fromEstimatedCall=None),
+                               leg(start + 60, id="b", situations=[notice(affects="AffectedLine")])))
+        first, second = data["departures"]
+        self.assertEqual((first["id"], first["line"], first["platform"], first["realtime"]), (f"42:{start}", "—", "—", False))
+        self.assertEqual(second["notices"][0]["scopeLabel"], "")
 
     def test_duplicate_and_expired_departures_removed(self):
-        self.assertEqual(len(self.parse(response(leg(), leg()))["departures"]), 1)
-        d = leg(aimedStartTime="2026-09-26T08:00:00+02:00", expectedStartTime="2026-09-26T08:00:00+02:00")
-        self.assertEqual(self.parse(response(d))["departures"], [])
+        start = base_time()
+        self.assertEqual(len(self.plan(trips(leg(start), leg(start)))["departures"]), 1)
+        now = int(time.time())
+        expired = on_time(now - 120)
+        recent = on_time(now - 30, id="recent")
+        self.assertEqual([d["id"] for d in self.plan(trips(expired, recent))["departures"]], [f"recent:{now - 30}"])
+
+    def test_sorted_by_expected_then_aimed_and_capped(self):
+        start = base_time()
+        legs = [on_time(start + 600, id="late"), leg(start, id="delayed", expectedStartTime=iso(start + 300)),
+                on_time(start + 300, id="early")] + [on_time(start + 900 + i * 60, id=f"x{i}") for i in range(5)]
+        data = self.plan(trips(*legs))
+        self.assertEqual([d["id"].split(":")[0] for d in data["departures"]], ["delayed", "early", "late", "x0", "x1", "x2"])
 
     def test_missing_platform_and_realtime_are_explicit(self):
-        d = self.parse(response(leg(fromEstimatedCall={})))["departures"][0]
+        d = self.plan(trips(leg(base_time(), fromEstimatedCall={})))["departures"][0]
         self.assertEqual(d["platform"], "—")
         self.assertFalse(d["realtime"])
 
 
-class StorageTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.env = patch.dict(os.environ, {key: self.temp.name + "/" + key for key in ("XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME")})
-        self.env.start()
-        self.addCleanup(self.env.stop)
-
+class StorageTests(Case):
     def test_neutral_first_run(self):
-        with patch.object(train, "request_json") as request:
-            self.assertEqual(train.fetch(None, "en")["status"], "unconfigured")
-            request.assert_not_called()
+        for args in ((), ("--force",), ("--offline",)):
+            self.assertEqual(self.helper.json(*args), {"status": "unconfigured", "route": None, "departures": [],
+                                                       "routeNotices": [], "updatedAt": 0, "stale": False,
+                                                       "error": "", "errorCode": ""})
+        self.assertEqual(self.entur.requests, [])
 
     def test_route_validation_sanitizes_station_labels(self):
         route = copy.deepcopy(ROUTE)
         route["from"]["name"] = " Central "
         route["from"]["label"] = "Search-only label"
-        self.assertEqual(train.validate_route(route), ROUTE)
+        route["extra"] = True
+        self.assertEqual(self.fetch("--offline", route=route)["route"], ROUTE)
 
     def test_route_validation_rejects_invalid_pairs(self):
-        for route in ({}, {"from": ROUTE["from"], "to": ROUTE["from"]},
-                      {"from": {"id": "bad", "name": "Central"}, "to": ROUTE["to"]}):
-            with self.assertRaises(train.TrainError):
-                train.validate_route(route)
+        select = "Select both stations from search results."
+        name = "Invalid station name."
+        cases = [({}, select), ([], select), ({"from": ROUTE["from"], "to": ROUTE["from"]}, "Choose two different stations."),
+                 ({"from": {"id": "bad", "name": "Central"}, "to": ROUTE["to"]}, select),
+                 ({"from": {"id": "NSR:StopPlace:1x", "name": "Central"}, "to": ROUTE["to"]}, select),
+                 ({"from": ROUTE["from"], "to": {"id": 2, "name": "Airport"}}, select),
+                 ({"from": ROUTE["from"], "to": "NSR:StopPlace:2"}, select),
+                 ({"from": {"id": "NSR:StopPlace:1", "name": " \t "}, "to": ROUTE["to"]}, name),
+                 ({"from": {"id": "NSR:StopPlace:1", "name": "x" * 161}, "to": ROUTE["to"]}, name),
+                 ({"from": {"id": "NSR:StopPlace:1", "name": "Oslo\nS"}, "to": ROUTE["to"]}, name),
+                 ({"from": {"id": "NSR:StopPlace:1"}, "to": ROUTE["to"]}, name)]
+        for route, message in cases:
+            with self.subTest(route=route):
+                report = self.fetch("--force", route=route)
+                self.assertEqual(report, {"status": "error", "route": None, "departures": [], "routeNotices": [],
+                                          "updatedAt": 0, "stale": False, "error": message, "errorCode": "invalid_route"})
+        longest = {"from": {"id": "NSR:StopPlace:1", "name": "ø" * 160}, "to": ROUTE["to"]}
+        self.assertEqual(self.fetch("--offline", route=longest)["errorCode"], "offline")
+        self.assertEqual(self.entur.requests, [])
 
     def test_failed_refresh_retains_original_snapshot_time(self):
-        with patch.object(train.time, "time", return_value=NOW), patch.object(train, "request_json", return_value=response(leg())):
-            original = train.fetch(ROUTE, "en", force=True)
-        self.assertEqual(stat.S_IMODE(train.cache_path(ROUTE, "en").stat().st_mode), 0o600)
-        with patch.object(train.time, "time", return_value=NOW+120), patch.object(train, "request_json", side_effect=train.TrainError("network_error", "Unavailable")):
-            stale = train.fetch(ROUTE, "en", force=True)
-        self.assertTrue(stale["stale"])
-        self.assertEqual(stale["updatedAt"], original["updatedAt"])
-        self.assertEqual(stale["status"], "stale")
+        self.entur.plan(busy(base_time()))
+        original = self.fetch("--force")
+        path = self.helper.cache_file()
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
+        self.assertEqual(path.read_text(), python_json(original))
+        aged = dict(original, updatedAt=original["updatedAt"] - 120)
+        self.helper.write_cache(aged)
+        self.entur.plan(Reply({"error": "down"}, status=503))
+        stale = self.fetch()
+        self.assertEqual(stale, dict(aged, status="stale", stale=True, error="Entur is unavailable. Try Refresh.",
+                                     errorCode="http_error"))
+        self.assertEqual(self.helper.read_cache(), aged)
+        refused = self.refused()
+        refused.write_cache(aged)
+        report = refused.fetch("--force")
+        self.assertEqual((report["status"], report["errorCode"], report["error"], report["updatedAt"]),
+                         ("stale", "network_error", "Cannot reach Entur. Check your connection and try Refresh.",
+                          aged["updatedAt"]))
 
-    def test_cache_isolated_by_route_and_language(self):
+    def test_cache_path_is_isolated_by_route_language_and_hours(self):
         reverse = {"from": ROUTE["to"], "to": ROUTE["from"]}
-        self.assertNotEqual(train.cache_path(ROUTE, "en"), train.cache_path(reverse, "en"))
-        self.assertNotEqual(train.cache_path(ROUTE, "en"), train.cache_path(ROUTE, "nb"))
+        names = {cache_name(ROUTE), cache_name(reverse), cache_name(ROUTE, "nb"), cache_name(ROUTE, "en", 1)}
+        self.assertEqual(len(names), 4)
+        self.fetch("--force")
+        self.fetch("--force", route=reverse)
+        self.fetch("--force", "--language", "nb")
+        self.fetch("--force", "--hours", "1")
+        self.assertEqual({p.name for p in self.helper.cache_dir.iterdir()}, names)
+
+    def test_cache_directory_follows_xdg_cache_home_only_when_absolute(self):
+        self.fetch("--force", env={"XDG_CACHE_HOME": "relative/cache"})
+        fallback = self.helper.home / ".cache" / "foamy.train"
+        self.assertTrue((fallback / cache_name()).is_file())
+        self.fetch("--force", env={"XDG_CACHE_HOME": ""})
+        self.fetch("--force", env={"XDG_CACHE_HOME": None})
+        self.assertEqual(len(list(fallback.iterdir())), 1)
+        self.assertFalse(self.helper.cache.exists())
+        self.assertFalse((self.helper.root / "relative").exists())
+
+    def test_fresh_cache_is_returned_as_stored(self):
+        now = int(time.time())
+        stored = {"status": "ok", "route": ROUTE, "departures": [], "routeNotices": [], "updatedAt": now - 10,
+                  "stale": False, "error": "", "errorCode": "", "searchHours": 24, "extra": {"kept": ["ø"]}}
+        path = self.helper.write_cache(stored)
+        result = self.helper.run("--route-stdin", stdin=json.dumps(ROUTE))
+        self.assertEqual((result.code, result.stderr, result.stdout), (0, b"", path.read_bytes()))
+        self.assertEqual(self.entur.requests, [])
+        self.helper.write_cache(dict(stored, updatedAt=now - 40))
+        self.assertEqual(self.fetch()["updatedAt"], self.helper.read_cache()["updatedAt"])
+        self.assertEqual(len(self.entur.requests), 2)
 
     def test_changing_hours_fetches_a_new_window_instead_of_reusing_short_cache(self):
-        with patch.object(train.time, "time", return_value=NOW), patch.object(train, "request_json", return_value=response(leg())) as request:
-            train.fetch(ROUTE, "en", look_ahead_hours=1)
-            self.assertEqual(request.call_args.args[1]["variables"]["searchWindow"], 60)
-            train.fetch(ROUTE, "en", look_ahead_hours=24)
-            # One train in the short window: widen to the full day.
-            self.assertEqual([c.args[1]["variables"]["searchWindow"] for c in request.call_args_list[1:]], [180, 1440])
-            train.fetch(ROUTE, "en", look_ahead_hours=24)
-            self.assertEqual(request.call_count, 3)
-        self.assertNotEqual(train.cache_path(ROUTE, "en", 1), train.cache_path(ROUTE, "en", 24))
-
-    def test_invalid_hours_are_rejected_before_network_or_cache(self):
-        with patch.object(train, "request_json") as request:
-            for hours in (0, 25, 1.5, "3", True):
-                with self.assertRaises(train.TrainError):
-                    train.fetch(ROUTE, "en", look_ahead_hours=hours)
-            request.assert_not_called()
+        self.entur.fallback[API_PATH] = Reply(trips(leg(base_time())))
+        self.fetch("--hours", "1")
+        self.assertEqual(self.entur.windows(), [60])
+        self.fetch("--hours", "24")
+        # One train in the short window: widen to the full day.
+        self.assertEqual(self.entur.windows(), [60, 180, 1440])
+        self.fetch("--hours", "24")
+        self.assertEqual(len(self.entur.requests), 3)
 
     def test_offline_never_requests_network(self):
-        with patch.object(train, "request_json") as request:
-            self.assertEqual(train.fetch(ROUTE, "en", offline=True)["status"], "error")
-            request.assert_not_called()
+        report = self.fetch("--offline")
+        self.assertEqual(report, {"status": "error", "route": ROUTE, "departures": [], "routeNotices": [], "updatedAt": 0,
+                                  "stale": False, "error": "Offline. Showing the last available update.",
+                                  "errorCode": "offline"})
+        self.fetch("--force")
+        stale = self.fetch("--offline")
+        self.assertEqual((stale["status"], stale["stale"], stale["errorCode"]), ("stale", True, "offline"))
+        self.assertEqual(len(self.entur.requests), 2)
 
     def test_cache_expiry_and_corruption_do_not_block_refresh(self):
-        train.atomic_json(train.cache_path(ROUTE, "en"), {"bad": 1})
-        with patch.object(train.time, "time", return_value=NOW), patch.object(train, "request_json", return_value=response(leg())):
-            self.assertEqual(train.fetch(ROUTE, "en")["status"], "ok")
-        with patch.object(train.time, "time", return_value=NOW+86401):
-            self.assertEqual(train.fetch(ROUTE, "en", offline=True)["status"], "error")
+        for corrupt in (b"{", b'{"bad": 1}', b"[]", b"\xff", b" " * 2_000_001):
+            self.helper.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.helper.cache_file().write_bytes(corrupt)
+            self.assertEqual(self.fetch()["status"], "ok")
+        old = dict(self.helper.read_cache(), updatedAt=int(time.time()) - 86401)
+        self.helper.write_cache(old)
+        self.assertEqual(self.fetch("--offline")["status"], "error")
+        future = dict(old, updatedAt=int(time.time()) + 3600)
+        self.helper.write_cache(future)
+        self.assertEqual(self.fetch("--offline")["status"], "error")
 
-    def busy(self):
-        return response(*[leg(id=f"t{i}", serviceJourney={"id": f"sj{i}"}, aimedStartTime=f"2026-09-26T09:{10 + i * 5}:00+02:00",
-                              expectedStartTime=f"2026-09-26T09:{10 + i * 5}:00+02:00") for i in range(7)])
+    def test_invalid_snapshots_are_ignored(self):
+        now = int(time.time())
+        good = {"status": "ok", "route": ROUTE, "departures": [], "routeNotices": [], "updatedAt": now - 10,
+                "stale": False, "error": "", "errorCode": ""}
+        departure = {"id": "a", "line": "R10", "platform": "1", "aimedTime": "10:00", "expectedTime": "10:00",
+                     "arrivalTime": "10:10", "aimed": now, "expected": now, "arrival": now, "delay": 0, "duration": 10,
+                     "realtime": True, "cancelled": False, "notices": []}
+        n = {"id": "n", "summary": "s", "detail": "", "scopeLabel": "", "kind": "info"}
+        self.helper.write_cache(dict(good, departures=[dict(departure, notices=[n])], routeNotices=[n]))
+        self.assertEqual(self.fetch("--offline")["status"], "stale")
+        invalid = [dict(good, status="stale"), dict(good, route=ROUTE["from"]), dict(good, updatedAt=float(now)),
+                   dict(good, updatedAt=True), dict(good, stale=0), dict(good, error=None), dict(good, departures={}),
+                   dict(good, departures=[dict(departure, delay=1.0)]), dict(good, departures=[dict(departure, realtime=1)]),
+                   dict(good, departures=[dict(departure, line=None)]), dict(good, departures=["x"]),
+                   dict(good, routeNotices=[dict(n, kind="error")]),
+                   dict(good, departures=[dict(departure, notices=[{"id": "n"}])])]
+        for snapshot in invalid:
+            with self.subTest(snapshot=snapshot):
+                self.helper.write_cache(snapshot)
+                self.assertEqual(self.fetch("--offline")["status"], "error")
+
+    def test_cache_write_failure_is_reported_with_the_departures(self):
+        self.helper.cache.mkdir()
+        self.helper.cache_dir.write_text("not a directory")
+        self.entur.plan(busy(base_time()))
+        report = self.fetch("--force")
+        self.assertEqual((report["status"], len(report["departures"]), report["error"], report["errorCode"]),
+                         ("ok", 6, "Could not save the local cache.", "cache_write"))
+
+    def test_no_temporary_files_remain(self):
+        self.fetch("--force")
+        self.fetch("--force", "--language", "nb")
+        self.assertEqual(sorted(p.name for p in self.helper.cache_dir.iterdir()),
+                         sorted([cache_name(), cache_name(ROUTE, "nb")]))
 
     def test_busy_route_needs_only_the_short_window(self):
-        with patch.object(train.time, "time", return_value=NOW), patch.object(train, "request_json", return_value=self.busy()) as request:
-            report = train.fetch(ROUTE, "en", force=True)
-        self.assertEqual(request.call_count, 1)
-        self.assertEqual(request.call_args.args[1]["variables"]["searchWindow"], train.FIRST_WINDOW_HOURS * 60)
-        self.assertEqual(len(report["departures"]), train.MAX_DEPARTURES)
-        self.assertEqual(report["searchHours"], train.FIRST_WINDOW_HOURS)
+        self.entur.plan(busy(base_time()))
+        report = self.fetch("--force")
+        self.assertEqual(self.entur.windows(), [180])
+        self.assertEqual(len(report["departures"]), 6)
+        self.assertEqual(report["searchHours"], 3)
+        self.assertNotIn("wideSince", report)
+
+    def test_sparse_route_widens_and_remembers_when(self):
+        self.entur.fallback[API_PATH] = Reply(trips(leg(base_time())))
+        report = self.fetch("--force")
+        self.assertEqual(self.entur.windows(), [180, 1440])
+        self.assertEqual(list(report)[-2:], ["searchHours", "wideSince"])
+        self.assertEqual((report["searchHours"], report["wideSince"]), (24, report["updatedAt"]))
+        self.assertEqual(self.helper.read_cache(), report)
 
     def test_sparse_route_reuses_the_full_window_for_an_hour(self):
-        windows = lambda request: [c.args[1]["variables"]["searchWindow"] for c in request.call_args_list]
-        with patch.object(train, "request_json", return_value=response(leg())) as request:
-            with patch.object(train.time, "time", return_value=NOW):
-                train.fetch(ROUTE, "en", force=True)
-            with patch.object(train.time, "time", return_value=NOW + 600):
-                train.fetch(ROUTE, "en", force=True)
-            self.assertEqual(windows(request), [180, 1440, 1440])
-            # Continuous polling refreshes updatedAt, but the hour counts from the first widening.
-            for minutes in range(20, 60, 10):
-                with patch.object(train.time, "time", return_value=NOW + minutes * 60):
-                    train.fetch(ROUTE, "en", force=True)
-            self.assertEqual(windows(request)[3:], [1440] * 4)
-            with patch.object(train.time, "time", return_value=NOW + train.WIDE_REUSE_SECONDS):
-                train.fetch(ROUTE, "en", force=True)
-            self.assertEqual(windows(request)[7:], [180, 1440])
-            with patch.object(train.time, "time", return_value=NOW + train.WIDE_REUSE_SECONDS + 600):
-                report = train.fetch(ROUTE, "en", force=True)
-            self.assertEqual(windows(request)[9:], [1440])
-            self.assertEqual(report["wideSince"], NOW + train.WIDE_REUSE_SECONDS)
+        self.entur.fallback[API_PATH] = Reply(trips(leg(base_time())))
+        first = self.fetch("--force")
+        since = first["wideSince"] - 600
+        self.helper.write_cache(dict(first, updatedAt=first["updatedAt"] - 600, wideSince=since))
+        report = self.fetch("--force")
+        # Continuous polling refreshes updatedAt, but the hour counts from the first widening.
+        self.assertEqual(self.entur.windows(), [180, 1440, 1440])
+        self.assertEqual(report["wideSince"], since)
+        self.helper.write_cache(dict(report, wideSince=int(time.time()) - 3605))
+        report = self.fetch("--force")
+        self.assertEqual(self.entur.windows()[3:], [180, 1440])
+        self.assertLessEqual(abs(report["wideSince"] - time.time()), 5)
+        for odd in ({"wideSince": 1.5}, {"wideSince": None}, {"searchHours": 3}, {"wideSince": int(time.time()) + 60}):
+            self.helper.write_cache(dict(report, **odd))
+            self.fetch("--force")
+        self.assertEqual(self.entur.windows()[5:], [180, 1440] * 4)
 
-    def test_requests_share_one_budget_inside_the_widget_timeout(self):
-        clock = [1000.0]
-        timeouts = []
-        def slow(url, payload, timeout):
-            timeouts.append(timeout)
-            clock[0] += 11
-            return response(leg())
-        with patch.object(train.time, "time", return_value=NOW), patch.object(train.time, "monotonic", side_effect=lambda: clock[0]), \
-                patch.object(train, "request_json", side_effect=slow):
-            report = train.fetch(ROUTE, "en", force=True)
-        # 11 s for the short window leaves too little to widen: keep its answer instead of being killed.
-        self.assertEqual(timeouts, [train.REQUEST_TIMEOUT])
-        self.assertEqual((report["status"], len(report["departures"]), report["searchHours"]), ("ok", 1, train.FIRST_WINDOW_HOURS))
-        clock[0], timeouts[:] = 1000.0, []
-        def medium(url, payload, timeout):
-            timeouts.append(timeout)
-            clock[0] += 6
-            return response(leg())
-        with patch.object(train.time, "time", return_value=NOW + 3 * train.WIDE_REUSE_SECONDS), patch.object(train.time, "monotonic", side_effect=lambda: clock[0]), \
-                patch.object(train, "request_json", side_effect=medium):
-            train.fetch(ROUTE, "en", force=True)
-        self.assertEqual(timeouts, [train.REQUEST_TIMEOUT, train.FETCH_BUDGET_SECONDS - 6])
-        self.assertLess(train.FETCH_BUDGET_SECONDS + 2, 18, "helper budget plus startup fits timeout 18s")
+    def test_short_look_ahead_uses_one_window(self):
+        for hours in ("1", "3"):
+            self.fetch("--force", "--hours", hours)
+        self.assertEqual(self.entur.windows(), [60, 180])
 
     def test_failed_widening_keeps_the_short_window(self):
-        calls = iter([response(leg()), train.TrainError("network_error", "Unavailable")])
-        def answer(*_, **__):
-            value = next(calls)
-            if isinstance(value, Exception):
-                raise value
-            return value
-        with patch.object(train.time, "time", return_value=NOW), patch.object(train, "request_json", side_effect=answer):
-            report = train.fetch(ROUTE, "en", force=True)
-        self.assertEqual(report["status"], "ok")
-        self.assertEqual(len(report["departures"]), 1)
+        for failure in (Reply({}, status=500), Reply(raw=b"nope"), Reply({"errors": ["x"]})):
+            with self.subTest(failure=failure.data):
+                self.entur.plan(trips(leg(base_time())), failure)
+                report = self.fetch("--force")
+                self.assertEqual((report["status"], len(report["departures"]), report["searchHours"], report["errorCode"]),
+                                 ("ok", 1, 3, ""))
+
+    def test_requests_share_one_budget_inside_the_widget_timeout(self):
+        # 11 s for the short window leaves too little to widen: keep its answer instead of being killed.
+        self.entur.plan(Reply(trips(leg(base_time())), delay=11))
+        began = time.monotonic()
+        report = self.fetch("--force")
+        self.assertEqual(self.entur.windows(), [180])
+        self.assertEqual((report["status"], len(report["departures"]), report["searchHours"]), ("ok", 1, 3))
+        self.assertLess(time.monotonic() - began, 13)
+        # 6 s leaves 8 s for the widening; a reply after 9 s is too late.
+        self.entur.plan(Reply(trips(leg(base_time())), delay=6), Reply(busy(base_time()), delay=9))
+        began = time.monotonic()
+        report = self.fetch("--force")
+        elapsed = time.monotonic() - began
+        self.assertEqual(self.entur.windows()[1:], [180, 1440])
+        self.assertEqual((report["status"], len(report["departures"]), report["searchHours"]), ("ok", 1, 3))
+        self.assertTrue(13 <= elapsed < 16, elapsed)
 
     def test_read_route_is_bounded(self):
-        import io
-        stream = io.TextIOWrapper(io.BytesIO(json.dumps(ROUTE).encode()))
-        self.assertEqual(train.read_route(stream), ROUTE)
-        with self.assertRaises(train.TrainError):
-            train.read_route(io.TextIOWrapper(io.BytesIO(b" " * (train.MAX_ROUTE_BYTES + 1))))
+        text = json.dumps(ROUTE)
+        self.assertEqual(self.fetch("--offline", route=text + " " * (4096 - len(text)))["route"], ROUTE)
+        self.assertEqual(self.fetch("--offline", route=text + " " * (4097 - len(text)))["errorCode"], "invalid_route")
+
+
+class SearchTests(Case):
+    def search(self, text, *replies, **kwargs):
+        self.entur.stations(*replies)
+        return self.helper.json("--search=" + text, **kwargs)
+
+    def test_request_shape(self):
+        self.search(" Lillestrøm st/1&2 ", {"features": []})
+        (request,) = self.entur.taken(GEOCODER_PATH)
+        self.assertEqual((request["method"], request["body"]), ("GET", b""))
+        self.assertEqual(request["query"], "q=Lillestr%C3%B8m+st%2F1%262&limit=8&stopPlaceTypes=railStation")
+        self.assertEqual(request["headers"]["et-client-name"], CLIENT)
+        self.assertEqual(request["headers"]["accept"], "application/json")
+        self.assertEqual(request["headers"]["content-type"], "application/json")
+        self.assertEqual(request["headers"]["host"], self.entur.url.split("//")[1])
+
+    def test_query_length_is_checked_after_trimming(self):
+        for text in ("", " a ", "x" * 101):
+            self.assertEqual(self.search(text), {"status": "ok", "stations": []})
+        self.assertEqual(self.entur.requests, [])
+        self.search("ab")
+        self.search("ø" * 100)
+        self.assertEqual(len(self.entur.requests), 2)
 
     def test_search_labels_are_one_bounded_line(self):
-        feature = {"properties": {"id": "NSR:StopPlace:12", "names": {"default": "Central", "display": "Central,\n" + "x" * 400}, "stopPlaceTypes": ["railStation"]}}
-        with patch.object(train, "request_json", return_value={"features": [feature]}):
-            label = train.search("Central")[0]["label"]
-        self.assertEqual(len(label), train.MAX_LABEL)
-        self.assertNotIn("\n", label)
+        long = feature("NSR:StopPlace:12", "Central", "Central,\n" + "x" * 400)
+        blank = feature("NSR:StopPlace:13", " Airport ", "\x00\x1f ")
+        tabs = feature("NSR:StopPlace:14", "Ski", "Ski\t\t\x7fstasjon")
+        stations = self.search("Central", {"features": [long, blank, tabs]})["stations"]
+        self.assertEqual(len(stations[0]["label"]), 160)
+        self.assertEqual(stations[0]["label"][:10], "Central, x")
+        self.assertEqual(stations[1], {"id": "NSR:StopPlace:13", "name": "Airport", "label": "Airport"})
+        self.assertEqual(stations[2]["label"], "Ski stasjon")
 
     def test_search_validates_and_deduplicates_stations(self):
-        good = {"properties": {"id": "NSR:StopPlace:12", "names": {"default": "Central", "display": "Central, City"}, "stopPlaceTypes": ["railStation"]}}
-        bad = {"properties": {"id": "not-an-id", "stopPlaceTypes": ["railStation"]}}
-        with patch.object(train, "request_json", return_value={"features": [good, good, bad]}):
-            self.assertEqual(train.search("Central"), [{"id": "NSR:StopPlace:12", "name": "Central", "label": "Central, City"}])
+        good = feature("NSR:StopPlace:12", "Central", "Central, City")
+        names_text = {"properties": {"id": "NSR:StopPlace:17", "names": "Oslo", "stopPlaceTypes": ["railStation"]}}
+        types_text = {"properties": {"id": "NSR:StopPlace:18", "names": {"default": "Ås"}, "stopPlaceTypes": "railStation"}}
+        others = [good, {"properties": {"id": "not-an-id", "stopPlaceTypes": ["railStation"]}},
+                  feature("NSR:StopPlace:15", "Bus", types=("onstreetBus",)), feature("NSR:StopPlace:16", "x" * 161),
+                  names_text, {"properties": None}, types_text, "x", None]
+        self.assertEqual(self.search("Central", {"features": others})["stations"],
+                         [{"id": "NSR:StopPlace:12", "name": "Central", "label": "Central, City"}])
+
+    def test_search_query_starting_with_a_dash_is_not_an_option(self):
+        found = self.search("-x", {"features": [feature("NSR:StopPlace:9", "-x Junction")]})
+        self.assertEqual(self.entur.taken(GEOCODER_PATH)[0]["query"].split("&")[0], "q=-x")
+        self.assertEqual(found["stations"][0]["name"], "-x Junction")
+
+    def test_search_failures(self):
+        invalid = {"status": "error", "route": None, "departures": [], "routeNotices": [], "updatedAt": 0, "stale": False,
+                   "error": "Station search returned an invalid response.", "errorCode": "invalid_response"}
+        self.assertEqual(self.search("Oslo", {"features": {}}), invalid)
+        self.assertEqual(self.search("Oslo", Reply({}, status=502))["errorCode"], "http_error")
+        self.assertEqual(self.search("Oslo", Reply(raw=b"<html>"))["errorCode"], "invalid_response")
+        self.assertEqual(self.refused().json("--search=Oslo")["errorCode"], "network_error")
+
+
+class NetworkTests(Case):
+    def test_planner_request_shape(self):
+        self.fetch("--force", "--hours", "2")
+        (request,) = self.entur.taken(API_PATH)
+        variables = {"from": "NSR:StopPlace:1", "to": "NSR:StopPlace:2", "searchWindow": 120}
+        self.assertEqual(request["method"], "POST")
+        self.assertEqual(request["body"], json.dumps({"query": QUERY, "variables": variables}).encode())
+        self.assertEqual(request["headers"]["et-client-name"], CLIENT)
+        self.assertEqual(request["headers"]["accept"], "application/json")
+        self.assertEqual(request["headers"]["content-type"], "application/json")
+        self.assertEqual(request["query"], "")
+
+    def test_failures_map_to_codes(self):
+        cases = [(Reply({}, status=500), "http_error"), (Reply({}, status=404), "http_error"),
+                 (Reply(raw=b"not json"), "invalid_response"), (Reply([]), "invalid_response"),
+                 (Reply(raw=b'{"a": 1} x'), "invalid_response"), (Reply(raw=b'{"a": "\xff"}'), "invalid_response")]
+        for reply, code in cases:
+            with self.subTest(code=code, data=reply.data[:20]):
+                self.assertEqual(self.plan(reply)["errorCode"], code)
+
+    def test_response_size_limit(self):
+        def sized(size):
+            head = b'{"data": {"trip": {"tripPatterns": []}}, "pad": "'
+            return head + b"x" * (size - len(head) - 2) + b'"}'
+        self.assertEqual(self.plan(Reply(raw=sized(2_000_000)))["status"], "ok")
+        self.assertEqual(self.plan(Reply(raw=sized(2_000_001)))["errorCode"], "invalid_response")
+
+    def test_redirect_is_followed_for_search(self):
+        moved = GEOCODER_PATH + "?q=moved&limit=8&stopPlaceTypes=railStation"
+        self.entur.stations(Reply({}, status=302, headers={"Location": moved}),
+                            {"features": [feature("NSR:StopPlace:3", "Moved")]})
+        self.assertEqual(self.helper.json("--search=Oslo")["stations"][0]["name"], "Moved")
+        self.assertEqual([r["query"].split("&")[0] for r in self.entur.taken(GEOCODER_PATH)], ["q=Oslo", "q=moved"])
+
+
+@unittest.skipUnless(CertAuthority.available, "needs the openssl CLI for a test CA")
+class TlsProxyTests(unittest.TestCase):
+    """HTTPS to a fake Entur on localhost: the system trust store (here
+    SSL_CERT_FILE) and https_proxy/no_proxy as Python's urllib reads them."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.TemporaryDirectory(prefix="foamy-train-ca-")
+        cls.ca = CertAuthority(cls.dir.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.dir.cleanup()
+
+    def setUp(self):
+        self.temp = temporary()
+        self.addCleanup(self.temp.cleanup)
+        self.entur = FakeEntur(tls=self.ca)
+        self.addCleanup(self.entur.close)
+        self.proxy = FakeProxy(("127.0.0.1", self.entur.port))
+        self.addCleanup(self.proxy.close)
+        self.helper = Helper(self.temp.name, self.entur.url)
+        self.helper.env["SSL_CERT_FILE"] = str(self.ca.ca)
+        self.entur.fallback[GEOCODER_PATH] = Reply({"features": [feature("NSR:StopPlace:7", "Secure")]})
+
+    def search(self, **env):
+        return self.helper.json("--search=Oslo", env=env)
+
+    def test_https_with_the_trusted_test_ca(self):
+        self.assertEqual(self.search()["stations"][0]["name"], "Secure")
+        self.assertEqual(self.helper.fetch("--force")["status"], "ok")
+        self.assertEqual(self.proxy.seen(), [])
+
+    def test_untrusted_certificate_is_a_network_error(self):
+        self.assertEqual(self.search(SSL_CERT_FILE=None)["errorCode"], "network_error")
+        self.assertEqual(self.entur.requests, [])
+
+    def test_https_proxy_tunnels_the_request(self):
+        self.assertEqual(self.search(https_proxy=self.proxy.url)["stations"][0]["name"], "Secure")
+        (tunnel,) = self.proxy.seen()
+        self.assertEqual(tunnel["request"].split()[:2], ["CONNECT", f"localhost:{self.entur.port}"])
+        self.assertNotIn("proxy-authorization", tunnel["headers"])
+        self.assertEqual(self.entur.requests[0]["headers"]["host"], f"localhost:{self.entur.port}")
+
+    def test_uppercase_proxy_and_credentials(self):
+        self.search(HTTPS_PROXY=self.proxy.url.replace("http://", "http://user:p%40ss@"))
+        self.search(https_proxy="127.0.0.1:%d" % self.proxy.port)
+        first, second = self.proxy.seen()
+        self.assertEqual(first["headers"]["proxy-authorization"], basic("user", "p@ss"))
+        self.assertNotIn("proxy-authorization", second["headers"])
+
+    def test_lowercase_wins_and_empty_lowercase_disables(self):
+        self.search(https_proxy=self.proxy.url, HTTPS_PROXY="http://127.0.0.1:9")
+        self.assertEqual(len(self.proxy.seen()), 1)
+        self.assertEqual(self.search(https_proxy="", HTTPS_PROXY="http://127.0.0.1:9")["stations"][0]["name"], "Secure")
+        self.assertEqual(self.search(http_proxy="http://127.0.0.1:9", all_proxy="http://127.0.0.1:9")["status"], "ok")
+        self.assertEqual(len(self.proxy.seen()), 1)
+
+    def test_no_proxy_bypasses_matching_hosts(self):
+        for value in ("localhost", "*", "example.org, .LOCALHOST", f"localhost:{self.entur.port}", "host"):
+            self.search(https_proxy=self.proxy.url, no_proxy=value)
+        self.search(https_proxy=self.proxy.url, NO_PROXY="localhost")
+        self.search(https_proxy=self.proxy.url, no_proxy="otherhost,calhost.x")
+        # Suffixes match whole labels: "host" doesn't cover "localhost".
+        self.assertEqual(len(self.proxy.seen()), 2)
+
+    def test_unreachable_proxy_is_a_network_error(self):
+        self.assertEqual(self.search(https_proxy="http://127.0.0.1:9")["errorCode"], "network_error")
+        self.assertEqual(self.entur.requests, [])
 
 
 if __name__ == "__main__":

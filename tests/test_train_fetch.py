@@ -577,6 +577,19 @@ class TlsProxyTests(unittest.TestCase):
         self.assertEqual(self.search(https_proxy="http://127.0.0.1:9")["errorCode"], "network_error")
         self.assertEqual(self.entur.requests, [])
 
+    def test_trickling_proxy_reply_is_bounded_by_the_request_deadline(self):
+        # Each byte arrives well within any per-read timeout; only the
+        # request's 12 s deadline ends it, before the widget's 18 s timeout.
+        slow = FakeProxy(("127.0.0.1", self.entur.port), trickle=True)
+        self.addCleanup(slow.close)
+        began = time.monotonic()
+        report = self.search(https_proxy=slow.url)
+        elapsed = time.monotonic() - began
+        self.assertEqual(report["errorCode"], "network_error")
+        self.assertEqual(len(slow.seen()), 1)
+        self.assertEqual(self.entur.requests, [])
+        self.assertTrue(11.5 <= elapsed < 14, elapsed)
+
 
 if __name__ == "__main__":
     unittest.main()

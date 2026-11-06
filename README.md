@@ -8,7 +8,11 @@ Direct trains in Norway, with live departures, delays, and service notices.
 
 Requires Omarchy 4.5 (also loads on Omarchy 4.0), GNU coreutils, and an x86_64
 or aarch64 CPU: the plugin ships a prebuilt static helper for both, and on other
-CPUs the widget says the helper isn't available. No API key is needed.
+CPUs the widget says the helper isn't available. HTTPS to Entur needs AES and
+carry-less multiply instructions (x86_64: Intel Broadwell / AMD Zen or newer;
+aarch64: the ARMv8 crypto extensions, e.g. Raspberry Pi 5 but not Pi 4);
+without them the widget says HTTPS isn't supported on this CPU. No API key is
+needed.
 
 ```sh
 omarchy plugin add https://github.com/foamrider/foamy-train.git --enable
@@ -101,13 +105,11 @@ Shared foamy components live in `kit/` (copied from
 Departures and station search run `bin/<arch>/foamy-train-helper`, a Rust
 helper built from `native/` (its contract is the comment at the top of
 `native/src/main.rs`). The binaries are committed; after changing `native/` or
-syncing the kit, rebuild and commit them with `native/native.pin` (needs rustup
-and clang, see the kit's "Native helpers"; ring, under rustls, compiles a little
-C, so name the C compiler for both targets):
+syncing the kit, rebuild and commit them with `native/native.pin` (needs rustup,
+see the kit's "Native helpers"; no C compiler: HTTPS uses the kit's `tls`
+module, Graviola crypto in Rust and assembly):
 
 ```sh
-export CC_x86_64_unknown_linux_musl=clang CFLAGS_x86_64_unknown_linux_musl=--target=x86_64-linux-musl
-export CC_aarch64_unknown_linux_musl=clang CFLAGS_aarch64_unknown_linux_musl=--target=aarch64-linux-musl
 ~/GitHub/Personal/foamy-kit/tools/build-native.sh . --test   # fmt, clippy, cargo test
 ~/GitHub/Personal/foamy-kit/tools/build-native.sh .          # both arches, writes native/native.pin
 ~/GitHub/Personal/foamy-kit/tools/build-native.sh . --verify # clean rebuild is byte-identical

@@ -59,6 +59,7 @@
   "Saturday": "Saturday",
   "Sunday": "Sunday",
   "Cannot reach Entur. Check your connection and try Refresh.": "Cannot reach Entur. Check your connection and try Refresh.",
+  "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)": "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)",
   "Offline. Showing the last available update.": "Offline. Showing the last available update.",
   "Entur is unavailable. Try Refresh.": "Entur is unavailable. Try Refresh.",
   "Entur returned an invalid response. Try Refresh.": "Entur returned an invalid response. Try Refresh.",

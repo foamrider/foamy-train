@@ -32,6 +32,13 @@ const helper = fs.readdirSync(native).filter(f => f.endsWith('.rs')).map(f => fs
 const helperKeys = [...helper.matchAll(/TrainError::new\(\s*"[a-z_]+",\s*"([^"]+)",?\s*\)/g)].map(m => m[1]);
 assert.ok(helperKeys.length >= 12, `helper error keys found: ${helperKeys.length}`);
 for (const key of helperKeys) assert.ok(Object.hasOwn(en, key), `helper error key: ${key}`);
+// tls::UNSUPPORTED (the vendored kit's message) is the error on a CPU without HTTPS support.
+if (/tls::UNSUPPORTED/.test(helper)) {
+  const tls = fs.readFileSync(path.join(root, 'kit', 'rust', 'foamy-helper', 'src', 'tls.rs'), 'utf8');
+  const unsupported = tls.match(/pub const UNSUPPORTED: &str = "((?:[^"\\]|\\.)*)";/);
+  assert.ok(unsupported, 'kit tls::UNSUPPORTED');
+  assert.ok(Object.hasOwn(en, unsupported[1]), `helper error key: ${unsupported[1]}`);
+}
 
 assert.equal(manifest.barWidget?.defaults?.language, undefined);
 assert.equal((manifest.barWidget?.schema || []).some(f => f.key === 'language'), false);

@@ -78,8 +78,16 @@
 //!   both with `ET-Client-Name: foamrider-foamy-train`, `Accept` and
 //!   `Content-Type: application/json`, no compression. Replies are JSON
 //!   objects of at most 2,000,000 bytes; 2xx only, redirects followed (up to 10).
-//! - TLS through rustls with the system trust store (rustls-native-certs:
-//!   `SSL_CERT_FILE`/`SSL_CERT_DIR` when set, else OpenSSL's default paths).
+//! - TLS through rustls with the kit's `foamy_helper::tls`: Graviola crypto
+//!   and the system trust store (`SSL_CERT_FILE`/`SSL_CERT_DIR` when set,
+//!   else OpenSSL's default paths). On a CPU without the instructions
+//!   Graviola needs (x86_64 before Intel Broadwell / AMD Zen, aarch64 without
+//!   the crypto extensions, e.g. a Raspberry Pi 4) no connection is made: the
+//!   request fails as `network_error` with `tls::UNSUPPORTED` as `error`.
+//! - Every request has one absolute deadline (its timeout) for DNS, connect,
+//!   the proxy's CONNECT reply, TLS, the head and the body: ureq's
+//!   `timeout_global`, and each socket read and write capped at the time left
+//!   (`net::DeadlineTransport`), so a peer trickling bytes cannot extend it.
 //! - `https_proxy`/`HTTPS_PROXY` and `no_proxy`/`NO_PROXY` as Python's urllib
 //!   reads them (`net.rs`): CONNECT over plain TCP whatever the proxy URL's
 //!   scheme, Basic credentials from `user:password@`, port 443 if missing.
@@ -104,6 +112,7 @@
 //! - Each request has a total deadline (urllib's timeout applied to each
 //!   socket operation, so a trickling reply could run until `timeout` killed
 //!   the helper).
+//! - No HTTPS on a CPU Graviola can't run on (see Network).
 //! - The cache is refused (a miss on read, `cache_write` on write) when it is
 //!   a symlink or not a regular file, when its directory is not owned by this
 //!   user or is writable by others, or without an absolute `HOME`.

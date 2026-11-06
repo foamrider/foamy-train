@@ -3,7 +3,8 @@
 - FakeEntur: a local journey planner and geocoder (HTTP, or HTTPS with a test
   CA) that records every request and answers from queued replies.
 - FakeProxy: a CONNECT proxy that records the tunnel request and forwards it
-  to a FakeEntur.
+  to a FakeEntur (or, with trickle=True, sends its reply one byte every 0.5 s
+  and never opens the tunnel).
 - CertAuthority: a throwaway CA and server certificate (openssl CLI), trusted by the
   helper only through SSL_CERT_FILE.
 - Helper: runs the helper with temporary HOME/XDG directories, an empty PATH,
@@ -251,10 +252,13 @@ class FakeEntur:
 
 class FakeProxy:
     """A CONNECT proxy that tunnels every request to `upstream` (host, port)
-    and records the request line and headers of each tunnel."""
+    and records the request line and headers of each tunnel. trickle=True:
+    answer every CONNECT with a reply head that never ends, one byte every
+    0.5 s for up to a minute."""
 
-    def __init__(self, upstream):
+    def __init__(self, upstream, trickle=False):
         self.upstream, self.tunnels, self.lock = upstream, [], threading.Lock()
+        self.trickle = trickle
         self.listener = socket.create_server(("127.0.0.1", 0))
         self.port = self.listener.getsockname()[1]
         self.url = f"http://127.0.0.1:{self.port}"
@@ -286,6 +290,15 @@ class FakeProxy:
                 self.tunnels.append({"request": lines[0], "headers": headers})
             if not lines[0].startswith("CONNECT "):
                 client.sendall(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n")
+                return
+            if self.trickle:
+                try:
+                    client.sendall(b"HTTP/1.1 200 Connection established\r\nX-Slow: ")
+                    for _ in range(120):
+                        time.sleep(0.5)
+                        client.sendall(b"x")
+                except OSError:
+                    pass
                 return
             with socket.create_connection(self.upstream) as server:
                 client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")

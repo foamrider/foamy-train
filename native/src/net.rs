@@ -1,15 +1,22 @@
 //! Requests to Entur: HTTPS with the system trust store, `https_proxy` and
-//! `no_proxy` read the way Python's urllib reads them, bounded replies.
+//! `no_proxy` read the way Python's urllib reads them, bounded replies, and
+//! one absolute deadline per request for every socket read and write.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
+use foamy_helper::tls;
 use serde_json::Value;
 use ureq::config::AutoHeaderValue;
 use ureq::tls::{Certificate, RootCerts, TlsConfig, TlsProvider};
-use ureq::{Agent, Proxy, ProxyProtocol};
+use ureq::unversioned::resolver::DefaultResolver;
+use ureq::unversioned::transport::{
+    Buffers, ConnectProxyConnector, ConnectionDetails, Connector, NextTimeout, RustlsConnector,
+    TcpConnector, Transport,
+};
+use ureq::{Agent, Proxy, ProxyProtocol, Timeout};
 
 use crate::entur::{INVALID, Object};
 use crate::{TrainError, py};
@@ -27,6 +34,9 @@ const NETWORK: TrainError = TrainError::new(
     "network_error",
     "Cannot reach Entur. Check your connection and try Refresh.",
 );
+/// No HTTPS on a CPU without the instructions Graviola needs: a network
+/// failure (same reply shape, stale snapshot kept) with the kit's message.
+const TLS_UNSUPPORTED: TrainError = TrainError::new("network_error", tls::UNSUPPORTED);
 
 /// Where requests go: `https://api.entur.io`, or the test-only override.
 pub struct Endpoint {
@@ -287,16 +297,15 @@ fn proxy_for(netloc: &str) -> Result<Option<Proxy>, TrainError> {
     builder.build().map(Some).map_err(|_| NETWORK)
 }
 
-/// The system trust store (rustls-native-certs: `SSL_CERT_FILE` /
-/// `SSL_CERT_DIR` when set, else the OpenSSL default locations), loaded once.
+/// The system trust store (the kit's `tls::system_roots_der`:
+/// `SSL_CERT_FILE` / `SSL_CERT_DIR` when set, else the OpenSSL default
+/// locations) in ureq's certificate type, loaded once.
 fn roots() -> Arc<Vec<Certificate<'static>>> {
     static ROOTS: OnceLock<Arc<Vec<Certificate<'static>>>> = OnceLock::new();
     ROOTS
         .get_or_init(|| {
-            let found = rustls_native_certs::load_native_certs();
             Arc::new(
-                found
-                    .certs
+                tls::system_roots_der()
                     .iter()
                     .map(|der| Certificate::from_der(der.as_ref()).to_owned())
                     .collect(),
@@ -305,39 +314,161 @@ fn roots() -> Arc<Vec<Certificate<'static>>> {
         .clone()
 }
 
+/// `Err(TLS_UNSUPPORTED)` for an https request on a CPU Graviola can't run
+/// on: checked before any connection, so the handshake never aborts.
+fn tls_ready(https: bool, cpu_supported: bool) -> Result<(), TrainError> {
+    if https && !cpu_supported {
+        Err(TLS_UNSUPPORTED)
+    } else {
+        Ok(())
+    }
+}
+
+/// The end of the request in flight, shared by the [`Client`] and the
+/// sockets its agent opens (a pooled connection serves later requests).
+#[derive(Debug, Clone, Default)]
+struct Deadline(Arc<Mutex<Option<Instant>>>);
+
+impl Deadline {
+    fn set(&self, at: Instant) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(at);
+    }
+
+    fn get(&self) -> Option<Instant> {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Puts every socket ureq opens (to Entur or to the CONNECT proxy) under
+/// [`DeadlineTransport`]; it sits right above the TCP connector, so the
+/// proxy's CONNECT reply and rustls run on top of it.
+#[derive(Debug)]
+struct DeadlineConnector(Deadline);
+
+impl<In: Transport> Connector<In> for DeadlineConnector {
+    type Out = DeadlineTransport<In>;
+
+    fn connect(
+        &self,
+        _details: &ConnectionDetails,
+        chained: Option<In>,
+    ) -> Result<Option<Self::Out>, ureq::Error> {
+        Ok(chained.map(|inner| DeadlineTransport {
+            inner,
+            deadline: self.0.clone(),
+        }))
+    }
+}
+
+/// ureq's transport with each read and write capped at the time left
+/// before the request's deadline, the way `foamy_helper::net::DeadlineStream`
+/// re-arms a socket. ureq's own `timeout_global` does this for the request
+/// and the body, but its CONNECT reply loop passes one fixed timeout to every
+/// read, so a proxy trickling its reply could hold a request far past it.
+#[derive(Debug)]
+struct DeadlineTransport<T> {
+    inner: T,
+    deadline: Deadline,
+}
+
+impl<T> DeadlineTransport<T> {
+    fn cap(&self, timeout: NextTimeout) -> Result<NextTimeout, ureq::Error> {
+        let Some(at) = self.deadline.get() else {
+            return Ok(timeout);
+        };
+        let left = at.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(ureq::Error::Timeout(Timeout::Global));
+        }
+        let left = left.into();
+        Ok(if left < timeout.after {
+            NextTimeout {
+                after: left,
+                reason: Timeout::Global,
+                ..timeout
+            }
+        } else {
+            timeout
+        })
+    }
+}
+
+impl<T: Transport> Transport for DeadlineTransport<T> {
+    fn buffers(&mut self) -> &mut dyn Buffers {
+        self.inner.buffers()
+    }
+
+    fn transmit_output(&mut self, amount: usize, timeout: NextTimeout) -> Result<(), ureq::Error> {
+        let timeout = self.cap(timeout)?;
+        self.inner.transmit_output(amount, timeout)
+    }
+
+    fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
+        let timeout = self.cap(timeout)?;
+        self.inner.await_input(timeout)
+    }
+
+    fn is_open(&mut self) -> bool {
+        self.inner.is_open()
+    }
+
+    fn is_tls(&self) -> bool {
+        self.inner.is_tls()
+    }
+}
+
 /// One agent per run, so the widening request reuses the connection.
 pub struct Client {
     endpoint: Endpoint,
     agent: Result<Agent, TrainError>,
+    deadline: Deadline,
 }
 
 impl Client {
     pub fn new() -> Result<Client, TrainError> {
         let endpoint = Endpoint::from_env()?;
-        let agent = Client::agent(&endpoint);
-        Ok(Client { endpoint, agent })
+        let proxy = if endpoint.https {
+            proxy_for(&endpoint.netloc)
+        } else {
+            // The test override's plain-http URLs never use a proxy.
+            Ok(None)
+        };
+        Ok(Client::with_proxy(endpoint, proxy))
     }
 
-    fn agent(endpoint: &Endpoint) -> Result<Agent, TrainError> {
+    fn with_proxy(endpoint: Endpoint, proxy: Result<Option<Proxy>, TrainError>) -> Client {
+        let deadline = Deadline::default();
+        let agent = proxy.map(|proxy| Client::agent(&endpoint, proxy, &deadline));
+        Client {
+            endpoint,
+            agent,
+            deadline,
+        }
+    }
+
+    fn agent(endpoint: &Endpoint, proxy: Option<Proxy>, deadline: &Deadline) -> Agent {
         let mut config = Agent::config_builder()
             .http_status_as_error(false)
             .max_redirects(10)
             .user_agent(USER_AGENT)
-            .accept_encoding(AutoHeaderValue::None);
+            .accept_encoding(AutoHeaderValue::None)
+            .proxy(proxy);
         if endpoint.https {
             let tls = TlsConfig::builder()
                 .provider(TlsProvider::Rustls)
                 .root_certs(RootCerts::Specific(roots()))
-                .unversioned_rustls_crypto_provider(Arc::new(
-                    rustls::crypto::ring::default_provider(),
-                ))
+                .unversioned_rustls_crypto_provider(tls::provider())
                 .build();
-            config = config.tls_config(tls).proxy(proxy_for(&endpoint.netloc)?);
-        } else {
-            // The test override's plain-http URLs never use a proxy.
-            config = config.proxy(None);
+            config = config.tls_config(tls);
         }
-        Ok(Agent::new_with_config(config.build()))
+        // ureq's default chain minus SOCKS (never configured here), with
+        // the deadline between the socket and everything layered on it.
+        let connector =
+            ().chain(ConnectProxyConnector::default())
+                .chain(TcpConnector::default())
+                .chain(DeadlineConnector(deadline.clone()))
+                .chain(RustlsConnector::default());
+        Agent::with_parts(config.build(), connector, DefaultResolver::default())
     }
 
     pub fn endpoint(&self) -> &Endpoint {
@@ -353,6 +484,9 @@ impl Client {
         timeout: Duration,
     ) -> Result<Object, TrainError> {
         let agent = self.agent.as_ref().map_err(|e| *e)?;
+        tls_ready(self.endpoint.https, tls::cpu_supported())?;
+        // DNS, connect, CONNECT, TLS, head and body all end by this instant.
+        self.deadline.set(Instant::now() + timeout);
         let response = match body {
             Some(body) => headers(agent.post(url))
                 .config()
@@ -545,5 +679,159 @@ mod tests {
             loopback("http://127.0.0.1:9/").unwrap().planner(),
             "http://127.0.0.1:9/journey-planner/v3/graphql"
         );
+    }
+
+    #[test]
+    fn https_needs_a_cpu_graviola_runs_on() {
+        assert_eq!(tls_ready(true, false), Err(TLS_UNSUPPORTED));
+        assert_eq!(TLS_UNSUPPORTED.code, "network_error");
+        assert_eq!(TLS_UNSUPPORTED.message, tls::UNSUPPORTED);
+        assert_eq!(tls_ready(true, true), Ok(()));
+        // The plain-http test override needs no TLS.
+        assert_eq!(tls_ready(false, false), Ok(()));
+    }
+
+    mod deadline {
+        use super::*;
+        use std::io::{Read, Write};
+        use std::net::{TcpListener, TcpStream};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::thread;
+
+        const BOUND: Duration = Duration::from_millis(400);
+        /// Scheduling slack on a loaded machine; still far below the
+        /// 80 × 50 ms = 4 s a trickle lasts when only each read is bounded.
+        const SLACK: Duration = Duration::from_millis(600);
+
+        /// The request head (up to the blank line), or None at EOF.
+        fn read_head(peer: &mut TcpStream) -> Option<Vec<u8>> {
+            let mut head = Vec::new();
+            let mut byte = [0u8; 1];
+            while !head.ends_with(b"\r\n\r\n") {
+                match peer.read(&mut byte) {
+                    Ok(1) => head.push(byte[0]),
+                    _ => return None,
+                }
+            }
+            Some(head)
+        }
+
+        /// A loopback peer that (after reading the request head when
+        /// `read_request`) sends `prefix` at once, then 80 bytes of
+        /// `filler`, one every 50 ms.
+        fn trickler(read_request: bool, prefix: &'static [u8], filler: u8) -> u16 {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            thread::spawn(move || {
+                let (mut peer, _) = listener.accept().unwrap();
+                if read_request && read_head(&mut peer).is_none() {
+                    return;
+                }
+                if peer.write_all(prefix).is_err() {
+                    return;
+                }
+                for _ in 0..80 {
+                    thread::sleep(Duration::from_millis(50));
+                    if peer.write_all(&[filler]).is_err() {
+                        return;
+                    }
+                }
+            });
+            port
+        }
+
+        fn client(base: &str, proxy: Option<Proxy>) -> Client {
+            Client::with_proxy(loopback(base).unwrap(), Ok(proxy))
+        }
+
+        /// The request fails as a network error within the deadline.
+        fn assert_bounded(client: &Client, url: &str) {
+            let started = Instant::now();
+            let result = client.request_json(url, None, BOUND);
+            let took = started.elapsed();
+            assert_eq!(result, Err(NETWORK), "{url}");
+            assert!(took >= BOUND - Duration::from_millis(50), "{url}: {took:?}");
+            assert!(took < BOUND + SLACK, "{url}: took {took:?}");
+        }
+
+        #[test]
+        fn a_trickling_head_cannot_outlast_the_deadline() {
+            let port = trickler(true, b"HTTP/1.1 200 OK\r\nX-Slow: ", b'x');
+            let client = client(&format!("http://127.0.0.1:{port}"), None);
+            assert_bounded(&client, &client.endpoint().geocoder("Oslo"));
+        }
+
+        #[test]
+        fn a_trickling_body_cannot_outlast_the_deadline() {
+            let port = trickler(
+                true,
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n",
+                b' ',
+            );
+            let client = client(&format!("http://127.0.0.1:{port}"), None);
+            assert_bounded(&client, &client.endpoint().geocoder("Oslo"));
+        }
+
+        #[test]
+        fn a_trickling_tls_handshake_cannot_outlast_the_deadline() {
+            if !tls::cpu_supported() {
+                return; // tls_ready refuses before connecting (tested above).
+            }
+            // A TLS handshake record header announcing 16 KiB that never
+            // completes: rustls keeps reading below the deadline.
+            let port = trickler(false, b"\x16\x03\x03\x40\x00", 0);
+            let client = client(&format!("https://127.0.0.1:{port}"), None);
+            assert_bounded(&client, &client.endpoint().geocoder("Oslo"));
+        }
+
+        #[test]
+        fn a_trickling_connect_proxy_cannot_outlast_the_deadline() {
+            if !tls::cpu_supported() {
+                return;
+            }
+            // ureq passes one fixed timeout to every read of the CONNECT
+            // reply; without DeadlineTransport this took the full 4 s.
+            let port = trickler(
+                true,
+                b"HTTP/1.1 200 Connection established\r\nX-Slow: ",
+                b'x',
+            );
+            let proxy = Proxy::builder(ProxyProtocol::Http)
+                .host("127.0.0.1")
+                .port(port)
+                .build()
+                .unwrap();
+            // The target is never contacted: the tunnel never opens.
+            let client = client("https://127.0.0.1:9", Some(proxy));
+            assert_bounded(&client, &client.endpoint().geocoder("Oslo"));
+        }
+
+        #[test]
+        fn a_pooled_connection_gets_the_next_requests_deadline() {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let accepted = Arc::new(AtomicUsize::new(0));
+            let count = Arc::clone(&accepted);
+            thread::spawn(move || {
+                for peer in listener.incoming() {
+                    let Ok(mut peer) = peer else { return };
+                    count.fetch_add(1, Ordering::SeqCst);
+                    while read_head(&mut peer).is_some() {
+                        let reply = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}";
+                        if peer.write_all(reply).is_err() {
+                            break;
+                        }
+                    }
+                }
+            });
+            let client = client(&format!("http://127.0.0.1:{port}"), None);
+            let url = client.endpoint().geocoder("Oslo");
+            assert_eq!(client.request_json(&url, None, BOUND), Ok(Object::new()));
+            // The first request's deadline has passed; the reused socket
+            // must run under the second one.
+            thread::sleep(BOUND + Duration::from_millis(100));
+            assert_eq!(client.request_json(&url, None, BOUND), Ok(Object::new()));
+            assert_eq!(accepted.load(Ordering::SeqCst), 1);
+        }
     }
 }

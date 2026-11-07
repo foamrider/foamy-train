@@ -5,6 +5,7 @@ import Quickshell.Io
 import Quickshell.Networking
 import "kit"
 import "kit/FoamyIpcResolver.js" as IpcResolver
+import "kit/FoamyNative.js" as FoamyNative
 import "Model.js" as Model
 import "Schedule.js" as Schedule
 
@@ -27,7 +28,10 @@ QtObject {
   readonly property bool active: FoamyShared.memberCount(memberScope) > 0
   // Someone has a train popup open on some monitor.
   readonly property bool demanded: FoamyShared.demandCount(memberScope) > 0
-  readonly property string helperPath: decodeURIComponent(Qt.resolvedUrl("train_fetch.py").toString().replace(/^file:\/\//, ""))
+  // The native helper is bin/<arch>/foamy-train-helper under this directory.
+  readonly property string pluginDir: FoamyNative.localPath(Qt.resolvedUrl("."))
+  // No helper for this CPU (exit 126/127): say so once and stop fetching.
+  property bool helperUnavailable: false
 
   // --- configuration (from the leader Panel) -----------------------------------
   property bool configured: false
@@ -93,7 +97,7 @@ QtObject {
   readonly property bool alert: withinSchedule && !stale && (departures.some(function(d) {
     return d.cancelled || d.delay > 0 || d.notices.some(function(n) { return n.kind === "warning" })
   }) || report.routeNotices.some(function(n) { return n.kind === "warning" }))
-  readonly property bool canPoll: active && configured && !!route && networkReady && withinSchedule
+  readonly property bool canPoll: active && configured && !!route && networkReady && withinSchedule && !helperUnavailable
 
   function configure(config) {
     var reset = !configured || config.routeJson !== configuredRoute || config.lookAheadHours !== lookAheadHours
@@ -136,7 +140,7 @@ QtObject {
   }
 
   function retryNetworkRequest() {
-    if (!networkReady || sessionLocked || !withinSchedule || networkRetries >= 3) return
+    if (!networkReady || sessionLocked || !withinSchedule || helperUnavailable || networkRetries >= 3) return
     // Bound startup recovery without overlapping the serialized worker.
     networkRetry.interval = 2500 * Math.pow(2, networkRetries++)
     networkRetry.restart()
@@ -147,7 +151,7 @@ QtObject {
   // Fetching is allowed: some bar shows the widget, a route is set and the
   // schedule is on. Checked again after every asynchronous step.
   function canFetch() {
-    return active && configured && withinSchedule && !!route
+    return active && configured && withinSchedule && !!route && !helperUnavailable
   }
 
   function refresh(force, present) {
@@ -219,10 +223,10 @@ QtObject {
     lastAttempt = Date.now() / 1000
     fetchInterval = pollInterval
     statusProcess.requestInput = JSON.stringify(route) + "\n"
-    statusProcess.command = ["timeout", "--kill-after=2s", "18s", "python3", helperPath,
-      "--language", language === "no" || language === "nb" ? "nb" : "en",
-      "--hours", String(lookAheadHours), "--route-stdin"]
-      .concat(force ? ["--force"] : []).concat(requestOffline ? ["--offline"] : [])
+    statusProcess.command = ["timeout", "--kill-after=2s", "18s"].concat(FoamyNative.command(pluginDir, "foamy-train-helper",
+      ["--language", language === "no" || language === "nb" ? "nb" : "en",
+       "--hours", String(lookAheadHours), "--route-stdin"]
+      .concat(force ? ["--force"] : []).concat(requestOffline ? ["--offline"] : [])))
     statusProcess.stdinEnabled = true
     statusProcess.running = true
     schedule()
@@ -244,6 +248,15 @@ QtObject {
     updated.stale = !!report.updatedAt
     updated.error = message
     report = updated
+  }
+
+  // Exit 126/127: no helper binary for this CPU. Shown once; never retried.
+  function helperFailed() {
+    helperUnavailable = true
+    resetNetworkRetry()
+    pendingRefresh = false
+    pollTimer.stop()
+    fail(FoamyNative.UNAVAILABLE_TEXT)
   }
 
   function drainRefresh() {
@@ -319,6 +332,10 @@ QtObject {
     onExited: function(code) {
       try {
         if (root.requestedGeneration !== root.generation) return
+        if (FoamyNative.unavailable(code)) {
+          root.helperFailed()
+          return
+        }
         if (code !== 0) {
           root.fail("Train request failed. Try Refresh.")
           root.retryNetworkRequest()

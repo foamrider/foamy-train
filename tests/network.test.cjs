@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const test = require("node:test");
+const FoamyNative = require("../kit/node-loader.cjs").load("FoamyNative");
 
 // Exercise TrainService's production functions with observable process,
 // timer and lock-registry boundaries.
@@ -34,7 +35,8 @@ function fixture(lock) {
     networkReady: false, networkRetries: 0, networkRetry: timer(), pollTimer: timer(), canPoll: false, pollInterval: 60,
     statusProcess: { running: false }, generation: 7,
     route: { from: { id: "NSR:StopPlace:1", name: "One" }, to: { id: "NSR:StopPlace:2", name: "Two" } },
-    helperPath: "/fixture/train.py", language: "en", lookAheadHours: 24, lastAttempt: 0,
+    pluginDir: "/fixture", helperUnavailable: false, FoamyNative, report: { status: "ready", updatedAt: 0 },
+    language: "en", lookAheadHours: 24, lastAttempt: 0,
     lockProbeAvailable: true, lockInProcess: false, lockProbeFailures: 0, lockForce: false,
     pendingRefresh: false, pendingForce: false, lockGeneration: 0, Math, JSON, String, Date,
     Qt: { callLater() {} }, drainRefresh() {},
@@ -44,7 +46,7 @@ function fixture(lock) {
     } },
     lockProbing: false,
     peer: { calls: [], call(t, m, a, done) { this.calls.push([t, m, a]); this.done = done; } },
-  }, ["canFetch", "refresh", "fetch", "lockProbeDone", "startLockProbe", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed"]);
+  }, ["canFetch", "refresh", "fetch", "lockProbeDone", "startLockProbe", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed", "helperFailed", "fail"]);
   return c;
 }
 test("offline startup loads cache only; the route goes to stdin, never argv", () => {
@@ -58,6 +60,27 @@ test("offline startup loads cache only; the route goes to stdin, never argv", ()
   c.refresh(true, false);
   assert.equal(c.statusProcess.command.includes("--offline"), false);
   assert.equal(c.requestedGeneration, 7);
+});
+test("the native helper runs under the same timeout with the route on stdin", () => {
+  const c = fixture(false); c.networkReady = true;
+  c.refresh(true, true);
+  assert.deepEqual(Array.from(c.statusProcess.command), ["timeout", "--kill-after=2s", "18s",
+    ...FoamyNative.command("/fixture", "foamy-train-helper", ["--language", "en", "--hours", "24", "--route-stdin", "--force"])]);
+  c.language = "no"; c.lookAheadHours = 3; c.networkReady = false; c.statusProcess.running = false;
+  c.refresh(false, true);
+  assert.deepEqual(Array.from(c.statusProcess.command).slice(9), ["--language", "nb", "--hours", "3", "--route-stdin", "--offline"]);
+});
+test("an unavailable helper (exit 126/127) is reported once and never retried", () => {
+  assert.match(qml, /if \(FoamyNative\.unavailable\(code\)\) \{\s*root\.helperFailed\(\)\s*return/);
+  const c = fixture(false); c.networkReady = true; c.pendingRefresh = true;
+  c.helperFailed();
+  assert.equal(c.helperUnavailable, true);
+  assert.equal(c.report.error, FoamyNative.UNAVAILABLE_TEXT);
+  assert.equal(c.pendingRefresh, false);
+  assert.equal(c.pollTimer.running, false);
+  c.refresh(true, true); c.retryNetworkRequest();
+  assert.equal(c.statusProcess.running, false);
+  assert.equal(c.networkRetry.starts, 0);
 });
 test("a reconnect during an active worker queues one forced refresh", () => {
   const c = fixture(false); c.statusProcess.running = true; c.networkReady = true;

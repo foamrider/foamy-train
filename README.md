@@ -6,8 +6,13 @@ Direct trains in Norway, with live departures, delays, and service notices.
 
 ## Install
 
-Requires Omarchy 4.5 (also loads on Omarchy 4.0), Python 3.10 or newer, and GNU
-coreutils. No API key is needed.
+Requires Omarchy 4.5, GNU coreutils, and an x86_64
+or aarch64 CPU: the plugin ships a prebuilt static helper for both, and on other
+CPUs the widget says the helper isn't available. HTTPS to Entur needs AES,
+carry-less multiply, AVX2, BMI2 and ADX on x86-64 (Intel Broadwell, AMD Zen or
+newer), or the crypto extensions on ARMv8 (a Raspberry Pi 5, not a Pi 4);
+without them the widget says HTTPS isn't supported on this CPU. No API key is
+needed.
 
 ```sh
 omarchy plugin add https://github.com/foamrider/foamy-train.git --enable
@@ -18,7 +23,8 @@ omarchy plugin add https://github.com/foamrider/foamy-train.git --enable
 1. Open **Settings** (the cog, `s` in the popup, or right-click the bar widget)
    and search for your **From** and **To** stations.
 2. Select both results. Settings save automatically.
-3. Use the arrows beside the cog to switch direction.
+3. Use the arrows beside the cog (or **Switch direction** in Settings) to
+   switch direction.
 
 Left-click opens departures. In the popup, arrows or `hjkl` move the cursor,
 Enter or Space expands a service notice or presses the highlighted button,
@@ -50,10 +56,16 @@ Departures come from Entur's journey planner. To keep requests light:
   IPC target (answered by Omarchy's lock and by Foamy Lock); opening the
   popup or pressing Refresh always fetches.
 - One request runs per shell, however many monitors show the bar.
+- Each check runs the helper once; it prints one reply and exits, so nothing
+  stays running between checks. A reply younger than 30 seconds is served
+  from the cache unless you press Refresh.
 - After a connection comes up, requests wait briefly for DNS and routes.
   Temporary failures retry up to three times with increasing delays. Cached
   departures stay visible offline, marked as cached once two polls in a row
   are overdue.
+
+Requests use the system's trusted certificates and honour `https_proxy` and
+`no_proxy`.
 
 Your stations and preferences stay in Omarchy's `shell.json`. Station searches
 and selected station IDs are sent to Entur. The station pair is passed to the
@@ -70,8 +82,8 @@ location permission is needed.
 omarchy plugin remove foamy.train
 ```
 
-Removal stops departure requests. Cached departure data remains on disk;
-there is no Entur account or subscription to cancel.
+Removal stops departure requests. Cached departure data remains in
+`~/.cache/foamy.train/`; there is no Entur account or subscription to cancel.
 
 Omarchy manages the plugin entry in `shell.json`. Packages and data outside
 the plugin directory are retained unless you remove them separately.
@@ -84,23 +96,44 @@ Code: [MIT](LICENSE), with [Omarchy](LICENSE-OMARCHY) and [Lucide](LICENSE-LUCID
 Provided **as is**, without warranty or guaranteed support. Use at your own risk.
 
 Language follows **Omarchy → Setup → Language** on Omarchy 4.5 (English and
-Norwegian catalogs; other languages fall back to English). Omarchy 4.0 displays
-the plugin in English.
+Norwegian catalogs; other languages fall back to English).
 
 ## Development
-
-`kit/` holds shared components copied from [foamy-kit](https://github.com/foamrider/foamy-kit); edit them there, not here.
 
 Shared foamy components live in `kit/` (copied from
 [foamy-kit](https://github.com/foamrider/foamy-kit); never edit them here).
 
+Departures and station search run `bin/<arch>/foamy-train-helper`, a Rust
+helper built from `native/` (its contract is the comment at the top of
+`native/src/main.rs`). The binaries are committed; after changing `native/` or
+syncing the kit, rebuild and commit them with `native/native.pin` (needs rustup,
+see the kit's "Native helpers"; no C compiler: HTTPS uses the kit's `tls`
+module, Graviola crypto in Rust and assembly):
+
+```sh
+~/GitHub/Personal/foamy-kit/tools/build-native.sh . --test   # fmt, clippy, cargo test
+~/GitHub/Personal/foamy-kit/tools/build-native.sh .          # both arches, writes native/native.pin
+~/GitHub/Personal/foamy-kit/tools/build-native.sh . --verify # clean rebuild is byte-identical
+```
+
+Tests (Python 3, node and the openssl CLI are needed for development only).
+The Python tests run the helper as a process against a local fake Entur
+(`tests/fake_entur.py`); `FOAMY_TRAIN_ENTUR_URL`, a loopback base URL, is the
+helper's test-only endpoint override, and `FOAMY_HELPER` (a JSON argv prefix)
+picks the binary:
+
 ```sh
 node --test tests/*.test.cjs
 python3 -m unittest discover -s tests -p 'test_*.py'
+FOAMY_HELPER='["bin/aarch64/foamy-train-helper"]' python3 -m unittest discover -s tests -p 'test_*.py'  # via qemu binfmt
 bash tests/kit-check.sh
-python3 tests/i18n-runtime.py            # OMARCHY_PATH=<4.5 tree> for live language switching
-python3 tests/runtime.py both            # offscreen, needs foamy-kit (FOAMY_KIT)
-python3 tests/cursor.py both             # popup cursor vs the 1 s clock (offscreen)
-foamy-kit/preview/render.py . --host both
-foamy-kit/preview/render.py . --preview preview/BarPreview.qml
+python3 tests/i18n-runtime.py            # live language switching (OMARCHY_PATH picks another tree)
+python3 tests/runtime.py                 # offscreen, needs foamy-kit (FOAMY_KIT)
+python3 tests/cursor.py                  # popup cursor vs the 1 s clock (offscreen)
+FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5
+FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5 --preview preview/BarPreview.qml
 ```
+
+The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
+(`FOAMY_HOST_45` picks another 4.5 tree). They also run on 4.0 when
+`FOAMY_HOST_40` names a 4.0 shell tree; otherwise they print a SKIP line for it.

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "foamy.train",
   "name": "Foamy Train",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "foamrider",
   "description": "Direct trains in Norway with live departure times and service notices.",
   "kinds": [

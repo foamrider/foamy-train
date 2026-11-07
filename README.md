@@ -6,7 +6,7 @@ Direct trains in Norway, with live departures, delays, and service notices.
 
 ## Install
 
-Requires Omarchy 4.5 (also loads on Omarchy 4.0), GNU coreutils, and an x86_64
+Requires Omarchy 4.5, GNU coreutils, and an x86_64
 or aarch64 CPU: the plugin ships a prebuilt static helper for both, and on other
 CPUs the widget says the helper isn't available. HTTPS to Entur needs AES,
 carry-less multiply, AVX2, BMI2 and ADX on x86-64 (Intel Broadwell, AMD Zen or
@@ -96,8 +96,7 @@ Code: [MIT](LICENSE), with [Omarchy](LICENSE-OMARCHY) and [Lucide](LICENSE-LUCID
 Provided **as is**, without warranty or guaranteed support. Use at your own risk.
 
 Language follows **Omarchy → Setup → Language** on Omarchy 4.5 (English and
-Norwegian catalogs; other languages fall back to English). Omarchy 4.0 displays
-the plugin in English.
+Norwegian catalogs; other languages fall back to English).
 
 ## Development
 

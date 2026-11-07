@@ -9,8 +9,9 @@ Direct trains in Norway, with live departures, delays, and service notices.
 Requires Omarchy 4.5 (also loads on Omarchy 4.0), GNU coreutils, and an x86_64
 or aarch64 CPU: the plugin ships a prebuilt static helper for both, and on other
 CPUs the widget says the helper isn't available. HTTPS to Entur needs AES and
-carry-less multiply instructions (x86_64: Intel Broadwell / AMD Zen or newer;
-aarch64: the ARMv8 crypto extensions, e.g. Raspberry Pi 5 but not Pi 4);
+carry-less multiply instructions (x86_64: also AVX2, BMI2 and ADX, so Intel
+Broadwell / AMD Zen or newer; aarch64: the ARMv8 crypto extensions, e.g.
+Raspberry Pi 5 but not Pi 4);
 without them the widget says HTTPS isn't supported on this CPU. No API key is
 needed.
 
@@ -23,7 +24,8 @@ omarchy plugin add https://github.com/foamrider/foamy-train.git --enable
 1. Open **Settings** (the cog, `s` in the popup, or right-click the bar widget)
    and search for your **From** and **To** stations.
 2. Select both results. Settings save automatically.
-3. Use the arrows beside the cog to switch direction.
+3. Use the arrows beside the cog (or **Switch direction** in Settings) to
+   switch direction.
 
 Left-click opens departures. In the popup, arrows or `hjkl` move the cursor,
 Enter or Space expands a service notice or presses the highlighted button,
@@ -55,6 +57,9 @@ Departures come from Entur's journey planner. To keep requests light:
   IPC target (answered by Omarchy's lock and by Foamy Lock); opening the
   popup or pressing Refresh always fetches.
 - One request runs per shell, however many monitors show the bar.
+- Each check runs the helper once; it prints one reply and exits, so nothing
+  stays running between checks. A reply younger than 30 seconds is served
+  from the cache unless you press Refresh.
 - After a connection comes up, requests wait briefly for DNS and routes.
   Temporary failures retry up to three times with increasing delays. Cached
   departures stay visible offline, marked as cached once two polls in a row
@@ -78,8 +83,8 @@ location permission is needed.
 omarchy plugin remove foamy.train
 ```
 
-Removal stops departure requests. Cached departure data remains on disk;
-there is no Entur account or subscription to cancel.
+Removal stops departure requests. Cached departure data remains in
+`~/.cache/foamy.train/`; there is no Entur account or subscription to cancel.
 
 Omarchy manages the plugin entry in `shell.json`. Packages and data outside
 the plugin directory are retained unless you remove them separately.
@@ -96,8 +101,6 @@ Norwegian catalogs; other languages fall back to English). Omarchy 4.0 displays
 the plugin in English.
 
 ## Development
-
-`kit/` holds shared components copied from [foamy-kit](https://github.com/foamrider/foamy-kit); edit them there, not here.
 
 Shared foamy components live in `kit/` (copied from
 [foamy-kit](https://github.com/foamrider/foamy-kit); never edit them here).

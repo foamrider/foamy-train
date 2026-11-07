@@ -129,9 +129,13 @@ node --test tests/*.test.cjs
 python3 -m unittest discover -s tests -p 'test_*.py'
 FOAMY_HELPER='["bin/aarch64/foamy-train-helper"]' python3 -m unittest discover -s tests -p 'test_*.py'  # via qemu binfmt
 bash tests/kit-check.sh
-python3 tests/i18n-runtime.py            # OMARCHY_PATH=<4.5 tree> for live language switching
-python3 tests/runtime.py both            # offscreen, needs foamy-kit (FOAMY_KIT)
-python3 tests/cursor.py both             # popup cursor vs the 1 s clock (offscreen)
-foamy-kit/preview/render.py . --host both
-foamy-kit/preview/render.py . --preview preview/BarPreview.qml
+python3 tests/i18n-runtime.py            # live language switching (OMARCHY_PATH picks another tree)
+python3 tests/runtime.py                 # offscreen, needs foamy-kit (FOAMY_KIT)
+python3 tests/cursor.py                  # popup cursor vs the 1 s clock (offscreen)
+FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5
+FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5 --preview preview/BarPreview.qml
 ```
+
+The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
+(`FOAMY_HOST_45` picks another 4.5 tree). They also run on 4.0 when
+`FOAMY_HOST_40` names a 4.0 shell tree; otherwise they print a SKIP line for it.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Offscreen runtime checks on both hosts (4.0 installed, 4.5 reference tree):
+"""Offscreen runtime checks on Omarchy 4.5 (the installed shell, or
+FOAMY_HOST_45; 4.0 too when FOAMY_HOST_40 names a 4.0 shell tree):
 two bar instances share one TrainService (leader configures it), the 4.5
 in-process `lock isLocked` probe pauses polling while locked, the route
 reaches the helper on stdin (never argv), popup demand switches the clock
@@ -10,13 +11,17 @@ Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
 The helper runs in offline mode (no network in the sandbox), so Entur is
 never contacted.
-  python3 tests/runtime.py [4.0|4.5|both]
+  python3 tests/runtime.py [4.0|4.5|both]   (default both: 4.0 prints SKIP
+                                            unless FOAMY_HOST_40 is set)
 """
 import os
 import sys
 from pathlib import Path
 
 KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"))
+# 4.5 is the installed shell (FOAMY_HOST_45 overrides it); 4.0 runs only when
+# FOAMY_HOST_40 names a 4.0 shell tree. Set before the harness reads them.
+os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 import harness  # noqa: E402
 
@@ -160,6 +165,9 @@ def main():
     which = sys.argv[1] if len(sys.argv) > 1 else "both"
     status = 0
     for host in (["4.0", "4.5"] if which == "both" else [which]):
+        if host == "4.0" and not os.environ.get("FOAMY_HOST_40"):
+            print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
+            continue
         qml = SHELL.replace("LOCK", LOCK_45 if host == "4.5" else "").replace("HOST", '"%s"' % host)
         run = harness.Run(host, qml, plugin=PLUGIN, prefix="foamy-train-runtime-")
         run.run(timeout=60)

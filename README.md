@@ -8,10 +8,9 @@ Direct trains in Norway, with live departures, delays, and service notices.
 
 Requires Omarchy 4.5 (also loads on Omarchy 4.0), GNU coreutils, and an x86_64
 or aarch64 CPU: the plugin ships a prebuilt static helper for both, and on other
-CPUs the widget says the helper isn't available. HTTPS to Entur needs AES and
-carry-less multiply instructions (x86_64: also AVX2, BMI2 and ADX, so Intel
-Broadwell / AMD Zen or newer; aarch64: the ARMv8 crypto extensions, e.g.
-Raspberry Pi 5 but not Pi 4);
+CPUs the widget says the helper isn't available. HTTPS to Entur needs AES,
+carry-less multiply, AVX2, BMI2 and ADX on x86-64 (Intel Broadwell, AMD Zen or
+newer), or the crypto extensions on ARMv8 (a Raspberry Pi 5, not a Pi 4);
 without them the widget says HTTPS isn't supported on this CPU. No API key is
 needed.
 

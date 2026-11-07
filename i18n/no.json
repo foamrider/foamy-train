@@ -59,7 +59,7 @@
   "Saturday": "Lørdag",
   "Sunday": "Søndag",
   "Cannot reach Entur. Check your connection and try Refresh.": "Kan ikke nå Entur. Sjekk nettverket og prøv Oppdater.",
-  "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)": "HTTPS støttes ikke på denne prosessoren (den mangler AES- og carry-less multiply-instruksjonene foamy-hjelpeprogrammene trenger)",
+  "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS støttes ikke på denne prosessoren (foamy-hjelpeprogrammene trenger AES, carry-less multiply, AVX2, BMI2 og ADX på x86-64, eller kryptoutvidelsene på ARMv8)",
   "Offline. Showing the last available update.": "Frakoblet. Viser siste tilgjengelige oppdatering.",
   "Entur is unavailable. Try Refresh.": "Entur er utilgjengelig. Prøv Oppdater.",
   "Entur returned an invalid response. Try Refresh.": "Entur returnerte et ugyldig svar. Prøv Oppdater.",

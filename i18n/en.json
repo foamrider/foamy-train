@@ -41,7 +41,6 @@
   "Choose two stations to see direct trains.": "Choose two stations to see direct trains.",
   "Choose stations": "Choose stations",
   "Loading departures…": "Loading departures…",
-  "Outside your schedule": "Outside your schedule",
   "Cached times; live predictions unavailable.": "Cached times; live predictions unavailable.",
   "From": "From",
   "To": "To",
@@ -109,5 +108,10 @@
   "Settings can't be saved: this widget has no bar entry.": "Settings can't be saved: this widget has no bar entry.",
   "Show minutes in the bar": "Show minutes in the bar",
   "Show trains in the next": "Show trains in the next",
-  "That value isn't allowed.": "That value isn't allowed."
+  "That value isn't allowed.": "That value isn't allowed.",
+  "Snooze until tomorrow": "Snooze until tomorrow",
+  "snoozed": "snoozed",
+  "outside your schedule": "outside your schedule",
+  "Stop snoozing": "Stop snoozing",
+  "Resume now": "Resume now"
 }

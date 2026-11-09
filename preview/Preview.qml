@@ -11,7 +11,7 @@ Item {
   required property QtObject bar
   required property Item anchorItem
   property var previewStates: ["departures", "delayed", "incidents", "route", "cancelled", "offline", "error", "unconfigured",
-    "schedule", "loading", "cursor", "settings", "settings-schedule", "settings-error"]
+    "schedule", "loading", "cursor", "menu", "menu-outside", "settings", "settings-schedule", "settings-error"]
   property string previewState: "departures"
   readonly property Item popup: popup
 
@@ -34,7 +34,7 @@ Item {
         departures: preview.departures
         next: Model.next(preview.departures)
         loading: preview.previewState === "loading"
-        outsideSchedule: preview.previewState === "schedule"
+        outsideSchedule: preview.previewState === "schedule" || preview.previewState === "menu-outside"
         route: Fixtures.route
         editingSettings: preview.previewState.indexOf("settings") === 0
         settingsError: preview.previewState === "settings-error" ? "Couldn't save the setting." : ""
@@ -53,6 +53,11 @@ Item {
           if (preview.previewState === "cursor") {
             // Keyboard cursor on the first notice, expanded.
             moveRequested(0, 1); moveRequested(0, 1); moveRequested(0, 1)
+            activateRequested()
+          }
+          // The ⋯ menu (Snooze, Settings), opened from the keyboard.
+          if (preview.previewState.indexOf("menu") === 0) {
+            moveRequested(0, 1); moveRequested(0, 1)
             activateRequested()
           }
         }

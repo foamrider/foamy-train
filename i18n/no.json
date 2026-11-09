@@ -41,7 +41,6 @@
   "Choose two stations to see direct trains.": "Velg to stasjoner for å se direkte tog.",
   "Choose stations": "Velg stasjoner",
   "Loading departures…": "Henter avganger…",
-  "Outside your schedule": "Utenfor tidsplanen",
   "Cached times; live predictions unavailable.": "Lagrede tider; sanntid er utilgjengelig.",
   "From": "Fra",
   "To": "Til",
@@ -109,5 +108,10 @@
   "Settings can't be saved: this widget has no bar entry.": "Innstillingene kan ikke lagres: modulen har ingen oppføring i linjen.",
   "Show minutes in the bar": "Vis minutter i linjen",
   "Show trains in the next": "Vis tog de neste",
-  "That value isn't allowed.": "Den verdien er ikke tillatt."
+  "That value isn't allowed.": "Den verdien er ikke tillatt.",
+  "Snooze until tomorrow": "Slumre til i morgen",
+  "snoozed": "slumrer",
+  "outside your schedule": "utenfor tidsplanen",
+  "Stop snoozing": "Slutt å slumre",
+  "Resume now": "Gjenoppta nå"
 }

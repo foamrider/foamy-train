@@ -48,7 +48,30 @@ QtObject {
     step: root.demanded ? 1000 : 60000
   }
   readonly property real nowEpoch: clock.date.getTime() / 1000
-  readonly property bool withinSchedule: Schedule.withinWeek(clock.date, scheduleEnabled, week)
+  // The schedule, or the popup's snooze/resume while it lasts (Schedule.toggled).
+  // Outside it nothing is fetched in the background; an open popup still fetches.
+  property var scheduleOverride: null
+  readonly property bool withinSchedule: Schedule.effective(clock.date, scheduleEnabled, week, scheduleOverride)
+  // Snoozed from the popup (not just outside the scheduled hours).
+  readonly property bool snoozed: !withinSchedule && !!scheduleOverride && clock.date.getTime() < scheduleOverride.until
+  // Someone is looking, or the schedule is in force: fetching is allowed.
+  readonly property bool live: withinSchedule || demanded
+
+  // Snoozing is kept beside the shell, never in shell.json, so it is not a setting.
+  readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state"
+  property string overridePath: stateHome + "/foamy-train/schedule-override.json"
+  property FileView overrideFile: FileView {
+    path: root.overridePath
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.scheduleOverride = Schedule.parseOverride(text(), Date.now())
+  }
+  function toggleSnooze() {
+    var now = new Date()
+    scheduleOverride = Schedule.toggled(now, scheduleEnabled, week, scheduleOverride)
+    clock.refresh()
+    overrideFile.setText(Schedule.serializeOverride(scheduleOverride))
+  }
 
   // --- network -------------------------------------------------------------------
   readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full
@@ -97,7 +120,7 @@ QtObject {
   readonly property bool alert: withinSchedule && !stale && (departures.some(function(d) {
     return d.cancelled || d.delay > 0 || d.notices.some(function(n) { return n.kind === "warning" })
   }) || report.routeNotices.some(function(n) { return n.kind === "warning" }))
-  readonly property bool canPoll: active && configured && !!route && networkReady && withinSchedule && !helperUnavailable
+  readonly property bool canPoll: active && configured && !!route && networkReady && live && !helperUnavailable
 
   function configure(config) {
     var reset = !configured || config.routeJson !== configuredRoute || config.lookAheadHours !== lookAheadHours
@@ -140,7 +163,7 @@ QtObject {
   }
 
   function retryNetworkRequest() {
-    if (!networkReady || sessionLocked || !withinSchedule || helperUnavailable || networkRetries >= 3) return
+    if (!networkReady || sessionLocked || !live || helperUnavailable || networkRetries >= 3) return
     // Bound startup recovery without overlapping the serialized worker.
     networkRetry.interval = 2500 * Math.pow(2, networkRetries++)
     networkRetry.restart()
@@ -149,9 +172,9 @@ QtObject {
   // force skips the helper's 30 s cache; present means someone is at the
   // screen (popup opened, Refresh, IPC), so the lock probe is skipped.
   // Fetching is allowed: some bar shows the widget, a route is set and the
-  // schedule is on. Checked again after every asynchronous step.
+  // schedule is on or a popup is open. Checked again after every asynchronous step.
   function canFetch() {
-    return active && configured && withinSchedule && !!route && !helperUnavailable
+    return active && configured && live && !!route && !helperUnavailable
   }
 
   function refresh(force, present) {
@@ -271,7 +294,7 @@ QtObject {
     return {
       status: report.status, departures: departures.length, stale: stale, locked: sessionLocked,
       lockProbe: !lockProbeAvailable ? "off" : lockInProcess ? "in-process" : "omarchy-shell",
-      pollSeconds: pollInterval, withinSchedule: withinSchedule, networkReady: networkReady
+      pollSeconds: pollInterval, withinSchedule: withinSchedule, snoozed: snoozed, networkReady: networkReady
     }
   }
 
@@ -289,15 +312,18 @@ QtObject {
     generation++
     refresh(true, false)
   }
-  onWithinScheduleChanged: {
-    if (!configured) return
+  onWithinScheduleChanged: if (configured && withinSchedule) {
     resetNetworkRetry()
-    // Leaving the schedule cancels work and invalidates any queued response.
+    refresh(true, false)
+  }
+  // Outside the schedule with the last popup closed: cancel work and
+  // invalidate any queued response. (An open popup keeps fetching.)
+  onLiveChanged: if (configured && !live) {
+    resetNetworkRetry()
     generation++
     pendingRefresh = false
     pendingForce = false
-    if (withinSchedule) refresh(true, false)
-    else statusProcess.running = false
+    statusProcess.running = false
   }
   onSessionLockedChanged: if (!sessionLocked) resetNetworkRetry()
 

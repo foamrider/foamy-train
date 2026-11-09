@@ -47,6 +47,8 @@ function fixture(lock) {
     lockProbing: false,
     peer: { calls: [], call(t, m, a, done) { this.calls.push([t, m, a]); this.done = done; } },
   }, ["canFetch", "refresh", "fetch", "lockProbeDone", "startLockProbe", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed", "helperFailed", "fail"]);
+  // The service's `live` binding: the schedule is in force or a popup is open.
+  Object.defineProperty(c, "live", { get() { return c.withinSchedule || c.demanded; } });
   return c;
 }
 test("offline startup loads cache only; the route goes to stdin, never argv", () => {
@@ -169,6 +171,12 @@ test("fetch itself refuses when polling is off", () => {
   const c = fixture(false); c.withinSchedule = false;
   c.fetch(true);
   assert.equal(c.statusProcess.running, false);
+});
+test("outside the schedule an open popup still fetches, like Zendesk", () => {
+  const c = fixture(false); c.withinSchedule = false; c.demanded = true; c.networkReady = true;
+  c.refresh(false, true);
+  assert.equal(c.statusProcess.running, true);
+  assert.match(qml, /readonly property bool live: withinSchedule \|\| demanded/);
 });
 test("every reconnection waits out the network settle delay", () => {
   // Handlers are not functions; check the declaration the singleton relies on.

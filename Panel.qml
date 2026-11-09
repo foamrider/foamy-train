@@ -97,7 +97,9 @@ Panel {
     prefs.retry()
   }
 
-  onOpenedChanged: if (opened) TrainService.refresh(false, true)
+  // Later, so this popup's demand is counted first: outside the schedule only
+  // an open popup may fetch.
+  onOpenedChanged: if (opened) Qt.callLater(function() { TrainService.refresh(false, true) })
 
   FoamyIpc {
     target: "foamy.train"
@@ -108,6 +110,7 @@ Panel {
     function settings(): void { root.openSettings() }
     function refresh(): void { TrainService.refresh(true, true) }
     function swap(): void { root.swapDirection() }
+    function snooze(): void { TrainService.toggleSnooze() }
     function status(): string { return JSON.stringify(TrainService.statusObject()) }
   }
 
@@ -124,6 +127,7 @@ Panel {
     fixedWidth: root.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
     tooltipText: FoamyI18n.t("Trains")
       + (TrainService.route ? " · " + FoamyI18n.t("%1 → %2", [TrainService.route.from.name, TrainService.route.to.name]) : "")
+      + (TrainService.snoozed ? " · " + FoamyI18n.t("snoozed") : !TrainService.withinSchedule ? " · " + FoamyI18n.t("outside your schedule") : "")
       + (TrainService.stale ? " · " + FoamyI18n.t("Cached times; live predictions unavailable.") : "")
     TrainBar {
       id: barContent
@@ -164,6 +168,7 @@ Panel {
         loading: TrainService.loading
         offline: !TrainService.networkReady
         outsideSchedule: !TrainService.withinSchedule
+        snoozed: TrainService.snoozed
         route: TrainService.route
         settings: root.effectiveSettings
         pluginDir: TrainService.pluginDir
@@ -177,6 +182,7 @@ Panel {
         onSettingsClosed: root.closeSettings()
         onRefreshRequested: TrainService.refresh(true, true)
         onSwapRequested: root.swapDirection()
+        onSnoozeRequested: TrainService.toggleSnooze()
         onSaveRequested: function(key, value) { root.save(key, value) }
         onRetryRequested: root.retrySave()
         onSwitchPanelRequested: function(direction) { root.switchPanel(direction) }

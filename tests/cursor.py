@@ -63,7 +63,7 @@ ShellRoot {
     onTriggered: {
       switch (shell.step++) {
       case 0:
-        check(shell.view && shell.view.stops.join(",") === "swap,settings,refresh", "stops are swap, settings, refresh: " + (shell.view ? shell.view.stops.join(",") : "?"))
+        check(shell.view && shell.view.stops.join(",") === "swap,settings,refresh", "stops are swap, settings (⋯), refresh: " + (shell.view ? shell.view.stops.join(",") : "?"))
         var before = shell.view.stops
         shell.tick()
         check(shell.view.stops !== before, "a clock tick rebuilds the stops array (as in the live popup)")
@@ -83,7 +83,7 @@ ShellRoot {
         check(steady(keys2, "swap"), "Switch direction stays lit while the clock ticks: " + keys2.join(" "))
         break
       case 3:
-        // Keyboard: Down from Switch direction to Settings, then tick.
+        // Keyboard: Down from Switch direction to Settings (the ⋯ button), then tick.
         body.moveRequested(0, 1)
         check(body.cursorKey === "settings", "Down moves to Settings")
         var keys3 = shell.ticks()

@@ -6,7 +6,9 @@ import "kit"
 import "Model.js" as Model
 
 // Departures: header, the next train (hero), its details and notices, route
-// notices, following departures and the footer. Stops for the popup cursor
+// notices, following departures and the footer. Outside the schedule (or
+// snoozed) it shows the same, fetched on open; the header says why the bar is
+// muted. Stops for the popup cursor
 // are listed in `stops` in visual order; `cursorKey` says which one is lit.
 Column {
   id: root
@@ -18,14 +20,16 @@ Column {
   property string language: "en"
   property bool loading: false
   property bool outsideSchedule: false
+  // Snoozed from the header (outsideSchedule is then true as well).
+  property bool snoozed: false
   property bool routeBusy: false
   property string cursorKey: ""
   // Expanded notice keys (notice detail shown).
   property var expanded: ({})
 
 
+  readonly property alias band: band
   readonly property var following: departures.filter(function(d) { return !root.next || d.id !== root.next.id })
-  readonly property bool paused: outsideSchedule
   readonly property bool unconfigured: report.status === "unconfigured"
   readonly property color warningText: FoamyPalette.onSurface(FoamyPalette.warning)
 
@@ -40,9 +44,10 @@ Column {
   readonly property var stops: {
     var list = []
     if (report.route) list.push("swap")
+    // Settings: the cog, or the ⋯ button while Settings is in its menu.
     list.push("settings")
     if (unconfigured) list.push("choose")
-    if (!paused && !unconfigured) {
+    if (!unconfigured) {
       if (next) list = list.concat(noticeStops("next/", next.notices))
       list = list.concat(noticeStops("route/", report.routeNotices))
       following.forEach(function(d) { list = list.concat(root.noticeStops("dep/" + d.id + "/", d.notices)) })
@@ -53,6 +58,7 @@ Column {
 
   signal settingsRequested()
   signal swapRequested()
+  signal snoozeRequested()
   signal refreshRequested()
   signal stopHovered(string key)
   signal revealRequested(Item item)
@@ -74,6 +80,7 @@ Column {
   }
   function activate(key) {
     if (key === "swap") { if (!routeBusy) swapRequested() }
+    else if (key === "settings" && band.settingsInMenu) band.openMenu(true)
     else if (key === "settings" || key === "choose") settingsRequested()
     else if (key === "refresh") { if (!loading && !routeBusy) refreshRequested() }
     else if (key !== "") toggle(key)
@@ -87,10 +94,24 @@ Column {
     width: parent.width
     iconName: "train"
     title: FoamyI18n.t("Trains")
-    meta: root.report.route ? FoamyI18n.t("%1 → %2", [root.report.route.from.name, root.report.route.to.name]) : ""
+    meta: root.report.route ? FoamyI18n.t("%1 → %2", [root.report.route.from.name, root.report.route.to.name])
+      + (root.snoozed ? " · " + FoamyI18n.t("snoozed") : root.outsideSchedule ? " · " + FoamyI18n.t("outside your schedule") : "") : ""
+    // Snooze and Settings live in the ⋯ menu: Switch direction and ⋯ on the right.
+    maxButtons: 2
     settingsHasCursor: root.cursorKey === "settings"
+    menuHasCursor: root.cursorKey === "settings"
     onSettingsClicked: root.settingsRequested()
     onSettingsHovered: function(hovered) { if (hovered) root.stopHovered("settings") }
+    onMenuHovered: function(hovered) { if (hovered) root.stopHovered("settings") }
+    menuItems: [
+      FoamyMenuItem {
+        objectName: "snoozeItem"
+        visible: !!root.report.route
+        text: root.snoozed ? FoamyI18n.t("Stop snoozing") : root.outsideSchedule ? FoamyI18n.t("Resume now") : FoamyI18n.t("Snooze until tomorrow")
+        iconName: root.outsideSchedule ? "sun" : "moon"
+        onTriggered: root.snoozeRequested()
+      }
+    ]
     trailing: [
       FoamyAction {
         objectName: "directionAction"
@@ -106,12 +127,9 @@ Column {
     ]
 
     // Hero: the next departure (countdown, destination, line and time), or
-    // why there is none. Outside the schedule the band is just the title row
-    // and the paused state sits in the body below (a zero-height hero slot
-    // takes no room in the band).
+    // why there is none.
     Column {
       id: hero
-      visible: !root.paused
       Layout.fillWidth: true
       spacing: FoamyStyle.gap
 
@@ -233,38 +251,11 @@ Column {
     }
   }
 
-  // Outside the schedule: an empty state in the body, under the title band.
-  Column {
-    objectName: "pausedState"
-    visible: root.paused
-    width: parent.width
-    topPadding: Style.space(32)
-    bottomPadding: Style.space(36)
-    leftPadding: FoamyStyle.padding
-    rightPadding: FoamyStyle.padding
-    spacing: FoamyStyle.gapLarge
-    FoamyIcon {
-      objectName: "sleepIcon"
-      anchors.horizontalCenter: parent.horizontalCenter
-      width: Style.space(24)
-      height: width
-      name: "moon"
-      color: FoamyPalette.mutedText
-    }
-    TrainText {
-      width: parent.width - parent.leftPadding - parent.rightPadding
-      horizontalAlignment: Text.AlignHCenter
-      text: FoamyI18n.t("Outside your schedule")
-      color: FoamyPalette.mutedText
-      font.pixelSize: FoamyStyle.font.bodySmall
-    }
-  }
-
   Column {
     id: details
     objectName: "departureDetails"
     // Nothing to refresh before stations are chosen.
-    visible: !root.paused && !root.unconfigured
+    visible: !root.unconfigured
     width: parent.width
     padding: FoamyStyle.padding
     topPadding: FoamyStyle.sectionGap

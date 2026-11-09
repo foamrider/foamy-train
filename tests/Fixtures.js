@@ -20,10 +20,10 @@ function report(state){
  if(state==="route")r.routeNotices=[notice('station','Lift to the platforms out of service','info','Use the staffed station entrance for assistance.','Oslo S')]
  if(state==="cancelled"){r.departures.forEach(function(d){d.cancelled=true;d.notices=[notice(d.id,'Train withdrawn from service','warning')]})}
  if(state==="offline"){r.stale=true;r.status="stale";r.updatedAt=now-720;r.error="Offline. Showing the last available update."}
- if(["empty","error","loading","unconfigured","schedule"].indexOf(state)>=0)r.departures=[]
+ if(["empty","error","loading","unconfigured"].indexOf(state)>=0)r.departures=[]
  if(state==="error"){r.status="error";r.updatedAt=0;r.error="Cannot reach Entur. Check your connection and try Refresh."}
  if(state==="unconfigured"){r.status="unconfigured";r.route=null;r.updatedAt=0}
- if(state==="loading"||state==="schedule"){r.status="ready";r.updatedAt=0}
+ if(state==="loading"){r.status="ready";r.updatedAt=0}
  return r
 }
 if(typeof module!=="undefined")module.exports={report:report,now:now,route:route}

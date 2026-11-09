@@ -4,8 +4,9 @@ FOAMY_HOST_45; 4.0 too when FOAMY_HOST_40 names a 4.0 shell tree):
 two bar instances share one TrainService (leader configures it), the 4.5
 in-process `lock isLocked` probe pauses polling while locked, the route
 reaches the helper on stdin (never argv), popup demand switches the clock
-to seconds, settings saves keep the route, invalid values are refused, and
-outside the schedule the band is only the title row with the paused state below.
+to seconds, settings saves keep the route, invalid values are refused, outside the
+schedule the popup still shows departures, and snoozing mutes the widget
+until tomorrow without saving settings (an open popup still fetches).
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
@@ -44,6 +45,7 @@ ShellRoot {
   property var route: ({ from: { id: "NSR:StopPlace:59872", name: "Oslo S" }, to: { id: "NSR:StopPlace:62339", name: "Lillestrøm" } })
   property var entry: ({ route: shell.route, refreshSeconds: 300 })
   property int step: 0
+  property int savedCount: 0
   readonly property bool modern: HOST === "4.5"
   function check(ok, what) { if (!ok) console.log("FOAMY FAIL " + what); else console.log("FOAMY OK " + what) }
   MockBar { id: bar; moduleName: "foamy.train" }
@@ -137,21 +139,50 @@ ShellRoot {
           check(Math.abs(to - Math.min(wheel.notch, wheel.maxY)) < 1, "one wheel notch scrolls about three rows: " + to)
           wheel.scrollTo(0, false)
         }
-        // Outside the schedule the band is only the title row; the paused
-        // state is in the body under it.
+        // Outside the schedule the popup shows the departures as usual; the
+        // header says why the bar is muted.
         body.outsideSchedule = true
         break
       case 6:
         var view = body.scroller.contentItem.children[0]
-        var band = null, paused = null
+        var band = null, details = null
         for (var i = 0; i < view.children.length; i++) {
           if (view.children[i].objectName === "heroBand") band = view.children[i]
-          if (view.children[i].objectName === "pausedState") paused = view.children[i]
+          if (view.children[i].objectName === "departureDetails") details = view.children[i]
         }
-        check(band && Math.abs(band.height - (FoamyStyle.bandPaddingTop + band.titleRow.height + FoamyStyle.bandPaddingBottom)) <= 1,
-              "paused band holds just the title row (" + (band ? band.height : "?") + ")")
-        check(paused && paused.visible && paused.y >= band.height, "paused state sits in the body below the band")
-        check(view.stops.join(",") === "swap,settings", "paused stops: Switch direction and Settings")
+        check(band && band.meta.indexOf(" · outside your schedule") > 0, "outside the schedule the header says so: " + (band ? band.meta : "?"))
+        check(details && details.visible, "outside the schedule the departures still show")
+        var stops = view.stops.join(",")
+        check(stops.indexOf("swap,settings,") === 0 && view.stops[view.stops.length - 1] === "refresh", "stops: Switch direction, ⋯, … Refresh: " + stops)
+        // Snooze and Settings are in the ⋯ menu; Switch direction stays a button.
+        check(band.settingsInMenu && band.shownTrailing.length === 1 && band.menuItems[0].iconName === "sun"
+              && band.menuItems[0].text === "Resume now", "Snooze and Settings are in the ⋯ menu; outside the schedule it offers Resume now")
+        view.activate("settings")
+        check(band.menuOpen && body.blocked, "Enter on ⋯ opens the menu, which takes the keys")
+        band.closeMenu()
+        body.snoozed = true
+        check(band.meta.indexOf(" · snoozed") > 0 && band.menuItems[0].text === "Stop snoozing", "snoozed: the header says so; the menu offers Stop snoozing")
+        body.outsideSchedule = false; body.snoozed = false
+        check(band.menuItems[0].text === "Snooze until tomorrow" && band.menuItems[0].iconName === "moon", "in the schedule the menu offers Snooze until tomorrow")
+        // The service: no schedule, so in force until snoozed.
+        shell.savedCount = bar.saved.length
+        check(s.withinSchedule && !s.snoozed, "without a schedule the widget is in force")
+        s.toggleSnooze()
+        var midnight = new Date(); midnight.setHours(24, 0, 0, 0)
+        check(!s.withinSchedule && s.snoozed && !s.canPoll && !s.canFetch(), "snoozing mutes the widget and stops background fetches")
+        check(s.scheduleOverride && s.scheduleOverride.until === midnight.getTime(), "without a schedule the snooze lasts until midnight")
+        check(bar.saved.length === shell.savedCount, "snoozing never saves settings")
+        a.open()
+        break
+      case 7:
+        check(s.live && s.canFetch(), "an open popup still fetches while snoozed")
+        a.close()
+        break
+      case 8:
+        check(!s.live && !s.canFetch(), "closing the popup stops fetching again")
+        s.toggleSnooze()
+        check(s.withinSchedule && !s.snoozed && s.scheduleOverride === null, "pressing again resumes the schedule")
+        check(bar.saved.length === shell.savedCount, "resuming never saves settings")
         console.log("FOAMY DONE")
         Qt.quit()
       }

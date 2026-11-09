@@ -21,6 +21,7 @@ PanelKeyCatcher {
   property bool loading: false
   property bool offline: false
   property bool outsideSchedule: false
+  property bool snoozed: false
   property var route: null
   property var settings: ({})
   property string pluginDir: ""
@@ -35,13 +36,15 @@ PanelKeyCatcher {
   signal settingsClosed()
   signal refreshRequested()
   signal swapRequested()
+  signal snoozeRequested()
   signal saveRequested(string key, var value)
   signal retryRequested()
   signal switchPanelRequested(int direction)
 
   implicitWidth: FoamyStyle.popupWidth
   implicitHeight: editingSettings ? settingsPane.implicitHeight : view.implicitHeight
-  blocked: editingSettings
+  // The ⋯ menu takes the keys while it is open.
+  blocked: editingSettings || view.band.menuOpen
 
   readonly property string cursorKey: keyAt(cursor.index)
   // The stop the keyboard or pointer last chose. `stops` is rebuilt on every
@@ -89,7 +92,7 @@ PanelKeyCatcher {
       Qt.callLater(root.forceActiveFocus)
     }
   }
-  onVisibleChanged: if (!visible) { cursor.reset(); heldKey = "" }
+  onVisibleChanged: if (!visible) { cursor.reset(); heldKey = ""; view.band.closeMenu() }
 
   // The departures scroller (tests check that cursor stops stay visible).
   readonly property Flickable scroller: scroll
@@ -119,6 +122,7 @@ PanelKeyCatcher {
       language: root.language
       loading: root.loading
       outsideSchedule: root.outsideSchedule
+      snoozed: root.snoozed
       routeBusy: root.routeSaving
       cursorKey: root.cursorKey
       onStopHovered: function(key) { cursor.hover(view.stops.indexOf(key)); root.hold() }
@@ -132,6 +136,7 @@ PanelKeyCatcher {
       onDetailOpened: function(item) { wheel.ensureVisible(item) }
       onSettingsRequested: root.settingsRequested()
       onSwapRequested: root.swapRequested()
+      onSnoozeRequested: root.snoozeRequested()
       onRefreshRequested: root.refreshRequested()
     }
   }

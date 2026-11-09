@@ -20,11 +20,19 @@ omarchy plugin add https://github.com/foamrider/foamy-train.git --enable
 
 ## Use
 
-1. Open **Settings** (the cog, `s` in the popup, or right-click the bar widget)
+1. Open **Settings** (in the ⋯ menu, `s` in the popup, or right-click the bar widget)
    and search for your **From** and **To** stations.
 2. Select both results. Settings save automatically.
-3. Use the arrows beside the cog (or **Switch direction** in Settings) to
+3. Use the arrows beside the ⋯ button (or **Switch direction** in Settings) to
    switch direction.
+4. **Snooze until tomorrow** (in the ⋯ menu): mutes the widget until
+   tomorrow, like being outside the schedule. A snooze lasts until today's
+   scheduled hours end (an overnight range runs on past midnight), or until
+   midnight without a schedule. Snoozed, the entry reads **Stop snoozing**;
+   outside the schedule it reads **Resume now** and turns the widget on until
+   midnight (or until the schedule starts, if sooner). Either goes back to
+   the schedule when pressed again. Snoozing is kept in
+   `$XDG_STATE_HOME/foamy-train/schedule-override.json`, never in `shell.json`.
 
 Left-click opens departures. In the popup, arrows or `hjkl` move the cursor,
 Enter or Space expands a service notice or presses the highlighted button,
@@ -38,8 +46,9 @@ countdown means the train is delayed.
   are shown; longer countdowns use hours and minutes.
 - **Refresh every**: 30 seconds to 15 minutes (default 1 minute).
 - **Use a weekly schedule**: per-day time ranges (local time, overnight ranges
-  carry into the next day). Outside the schedule the widget dims or hides and
-  stops fetching.
+  carry into the next day). Outside the schedule (or snoozed) the widget dims
+  or hides and stops fetching in the background. Opening the popup still
+  fetches and shows the departures, and keeps them fresh while it is open.
 
 ## Network use
 
@@ -74,7 +83,8 @@ location permission is needed.
 
 ## IPC
 
-`omarchy-shell foamy.train <open|close|toggle|settings|refresh|swap|status>`.
+`omarchy-shell foamy.train <open|close|toggle|settings|refresh|swap|snooze|status>`
+(`snooze` is the ⋯ menu's snooze entry).
 
 ## Verifying the helper binaries
 

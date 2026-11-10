@@ -88,42 +88,55 @@ location permission is needed.
 
 ## Verifying the helper binaries
 
-`bin/x86_64/foamy-train-helper` and `bin/aarch64/foamy-train-helper` are compiled from the Rust
-source in this repository: `native/`, the shared crate in
-`kit/rust/foamy-helper/`, the dependencies locked in `Cargo.lock` and the
-toolchain pinned in `rust-toolchain.toml`. The build is reproducible, so you
-can rebuild both binaries yourself and check that they are byte-identical to
-the committed files.
+`bin/x86_64/foamy-train-helper` and `bin/aarch64/foamy-train-helper` are compiled from the Rust source in this repository: `native/`, the
+shared crate in `kit/rust/`, the dependencies locked in `Cargo.lock` and the
+toolchain pinned in `rust-toolchain.toml`, with the build tool in
+`kit/native/`. The build is reproducible. `native/native.pin` records the
+toolchain, a hash of every build input (`source`) and the SHA-256 of each
+binary.
 
-`native/native.pin` records the foamy-kit release that built them (`kit`), the
-Rust toolchain (`toolchain`), a hash of every build input (`source`) and the
-SHA-256 of each binary. The rebuild uses that foamy-kit release's
-`tools/build-native.sh`. You need `git`, `rustup`, Python 3.11 or newer and
-`file`; Omarchy isn't needed.
+**CI.** The [Verify native helpers](https://github.com/foamrider/foamy-train/actions/workflows/verify-native.yml)
+workflow rebuilds both binaries on a GitHub-hosted runner for every push,
+compares them byte for byte with `bin/`, and attests the rebuilt files. To
+check the committed files against that attestation (GitHub CLI):
 
 ```sh
-git clone https://github.com/foamrider/foamy-train.git
-cd foamy-train
-pin=native/native.pin
-rustup toolchain install "$(awk '$1 == "toolchain" { print $2 }' $pin)" \
-  --profile minimal --target x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
-# foamy-kit 0.5.2 (`kit` in native.pin), at the commit its v0.5.2 tag names:
-git clone https://github.com/foamrider/foamy-kit.git ../foamy-kit &&
-  git -C ../foamy-kit checkout -q --detach cc3e46f0fae443701c81793cf9f49890b39b37c1 &&
-  ../foamy-kit/tools/build-native.sh . --verify
+gh attestation verify bin/x86_64/foamy-train-helper --repo foamrider/foamy-train \
+  --signer-workflow foamrider/foamy-train/.github/workflows/verify-native.yml \
+  --deny-self-hosted-runners
+gh attestation verify bin/aarch64/foamy-train-helper --repo foamrider/foamy-train \
+  --signer-workflow foamrider/foamy-train/.github/workflows/verify-native.yml \
+  --deny-self-hosted-runners
 ```
 
-The last command builds both binaries from scratch in `~/.cache/foamy-native/`
-(nothing is written to the checkout) and compares them byte for byte with
-`bin/`. It also checks that the kit files are unmodified copies of that
-foamy-kit release and that `native.pin` matches the source. It ends with
-`verify OK (foamy-train-helper, <toolchain>, both arches reproducible)`; any
-difference is reported with both hashes. `git -C ../foamy-kit describe --tags`
-prints `v0.5.2`, the release `native.pin` names. To check a release the
-marketplace lists, run `git checkout <commit>` right after `cd`.
+Add `--source-digest <commit>` to require a particular commit.
 
-<!-- Maintainers: when native.pin's kit changes, set the commit above to
-     `git -C foamy-kit rev-parse v<kit>^{commit}`. -->
+**Yourself.** You need `rustup`, Python 3.11 or newer and `file`. From a
+checkout of this repository at the commit you want to check:
+
+```sh
+rustup toolchain install "$(awk '$1 == "toolchain" { print $2 }' native/native.pin)" \
+  --profile minimal --target x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+kit/native/build-native.sh . --verify
+```
+
+It builds both binaries from scratch in `~/.cache/foamy-native/` (nothing is
+written to the checkout), compares them byte for byte with `bin/`, checks
+that the kit files are unmodified and that `native.pin` matches the source,
+and ends with `verify OK (foamy-train-helper, <toolchain>, both arches reproducible)`.
+
+### Building the helper yourself
+
+To run binaries you built instead of the committed ones, build them in the
+installed plugin with the same toolchain, then run `omarchy restart shell`:
+
+```sh
+cd ~/.config/omarchy/plugins/foamy.train
+kit/native/build-native.sh .
+```
+
+The build is reproducible, so `git status` shows no change when your
+binaries match the release, and `omarchy plugin update` still applies.
 
 ## Remove
 
@@ -160,9 +173,9 @@ see the kit's "Native helpers"; no C compiler: HTTPS uses the kit's `tls`
 module, Graviola crypto in Rust and assembly):
 
 ```sh
-~/GitHub/Personal/foamy-kit/tools/build-native.sh . --test   # fmt, clippy, cargo test
-~/GitHub/Personal/foamy-kit/tools/build-native.sh .          # both arches, writes native/native.pin
-~/GitHub/Personal/foamy-kit/tools/build-native.sh . --verify # clean rebuild is byte-identical
+kit/native/build-native.sh . --test   # fmt, clippy, cargo test
+kit/native/build-native.sh .          # both arches, writes native/native.pin
+kit/native/build-native.sh . --verify # clean rebuild is byte-identical
 ```
 
 Tests (Python 3, node and the openssl CLI are needed for development only).

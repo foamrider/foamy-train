@@ -10,7 +10,9 @@ until tomorrow without saving settings (an open popup still fetches).
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
-The helper runs in offline mode (no network in the sandbox), so Entur is
+The system bus is a dead address, so NetworkManager is invisible and the
+helper runs in offline mode; its Entur endpoint is also overridden with a
+non-loopback URL, which fails every request without connecting. Entur is
 never contacted.
   python3 tests/runtime.py [4.0|4.5|both]   (default both: 4.0 prints SKIP
                                             unless FOAMY_HOST_40 is set)
@@ -124,6 +126,7 @@ ShellRoot {
         check(argv.indexOf("timeout --kill-after=2s 18s bash -c") === 0 && argv.indexOf("foamy-train-helper") >= 0, "the native helper runs under the widget timeout")
         check(s.report.route && s.report.route.to.name === "Lillestrøm", "helper received the route on stdin (" + s.report.status + "/" + s.report.errorCode + ")")
         check(s.report.errorCode === "offline", "sandbox fetch is offline (no network)")
+        check(!s.networkConnected, "the service sees no network connection (system bus isolated)")
         a.open()
         break
       case 4:
@@ -221,7 +224,16 @@ def main():
             print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
             continue
         qml = SHELL.replace("LOCK", LOCK_45 if host == "4.5" else "").replace("HOST", '"%s"' % host)
-        run = harness.Run(host, qml, plugin=PLUGIN, prefix="foamy-train-runtime-")
+        # A stand-in, so the omarchy-shell lock probe (4.0) never reaches a real shell.
+        run = harness.Run(host, qml, plugin=PLUGIN, prefix="foamy-train-runtime-",
+                          fakebin={"omarchy-shell": "#!/bin/sh\nexit 1\n"})
+        # The harness gives qs a private session bus only. On the system bus
+        # NetworkManager reports the real connection, and two seconds later
+        # the service would ask Entur for real departures. A dead system bus
+        # keeps it offline; the non-loopback endpoint override makes any
+        # request that still goes out fail before it connects.
+        run.env["DBUS_SYSTEM_BUS_ADDRESS"] = f"unix:path={run.base}/no-system-bus"
+        run.env["FOAMY_TRAIN_ENTUR_URL"] = "http://entur.invalid"
         run.run(timeout=60)
         oks = run.log.count("FOAMY OK")
         if run.ok:

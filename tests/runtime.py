@@ -17,6 +17,7 @@ never contacted.
   python3 tests/runtime.py [4.0|4.5|both]   (default both: 4.0 prints SKIP
                                             unless FOAMY_HOST_40 is set)
 """
+import json
 import os
 import sys
 from pathlib import Path
@@ -226,6 +227,14 @@ ShellRoot {
         if (s.inFlight) { shell.step--; break }
         check(s.report.errorCode === "offline" && s.report.error !== "Train request failed. Try Refresh.",
               "the next request runs normally: " + s.report.errorCode)
+        // A helper whose search reply lists more stations than the 8 asked for.
+        search.pluginDir = Quickshell.env("FOAMY_TRAIN_FAKE_SEARCH")
+        shell.startSearch("Many")
+        break
+      case 11:
+        if (search.inFlight) { shell.step--; break }
+        check(search.error === "" && search.results.length === 8 && search.results[7].id === "NSR:StopPlace:8",
+              "a long station list shows the first 8: " + search.results.length + " " + search.error)
         console.log("FOAMY DONE")
         Qt.quit()
       }
@@ -233,6 +242,20 @@ ShellRoot {
   }
 }
 '''
+
+
+def fake_search(directory, count=40):
+    """A plugin directory whose helper (either arch) answers every search
+    with `count` valid stations."""
+    stations = [{"id": f"NSR:StopPlace:{n}", "name": f"Station {n}", "label": f"Station {n}, Norway"}
+                for n in range(1, count + 1)]
+    reply = json.dumps({"status": "ok", "stations": stations})
+    for arch in ("x86_64", "aarch64"):
+        helper = directory / "bin" / arch / "foamy-train-helper"
+        helper.parent.mkdir(parents=True)
+        helper.write_text("#!/bin/sh\ncat <<'EOF'\n" + reply + "\nEOF\n")
+        helper.chmod(0o755)
+    return directory
 
 
 def main():
@@ -253,6 +276,7 @@ def main():
         # request that still goes out fail before it connects.
         run.env["DBUS_SYSTEM_BUS_ADDRESS"] = f"unix:path={run.base}/no-system-bus"
         run.env["FOAMY_TRAIN_ENTUR_URL"] = "http://entur.invalid"
+        run.env["FOAMY_TRAIN_FAKE_SEARCH"] = str(fake_search(run.base / "fake-search"))
         run.run(timeout=60)
         oks = run.log.count("FOAMY OK")
         if run.ok:

@@ -16,6 +16,8 @@ Column {
   // The plugin directory; the search runs bin/<arch>/foamy-train-helper.
   property string pluginDir: ""
   property var results: []
+  // The helper asks Entur's geocoder for this many stations (limit=8).
+  readonly property int maxResults: 8
   property string error: ""
   property string requestedText: ""
   property int revision: 0
@@ -83,11 +85,15 @@ Column {
         root.error = FoamyI18n.t(data.error || "Station search failed. Try again.")
         return
       }
-      if (!Array.isArray(data.stations) || !data.stations.every(function(s) {
+      if (!Array.isArray(data.stations)) throw Error("invalid stations")
+      // The helper doesn't cap Entur's reply: only maxResults are validated
+      // and get a result row.
+      var stations = data.stations.slice(0, root.maxResults)
+      if (!stations.every(function(s) {
         return Model.validStation(s) && typeof s.label === "string" && s.label.length <= 160
       })) throw Error("invalid stations")
-      root.results = data.stations
-      root.error = data.stations.length ? "" : FoamyI18n.t("No stations found.")
+      root.results = stations
+      root.error = stations.length ? "" : FoamyI18n.t("No stations found.")
     } catch (e) {
       root.error = FoamyI18n.t("Station search failed. Try again.")
     }

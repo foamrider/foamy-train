@@ -207,6 +207,25 @@ ShellRoot {
         s.toggleSnooze()
         check(s.withinSchedule && !s.snoozed && s.scheduleOverride === null, "pressing again resumes the schedule")
         check(bar.saved.length === shell.savedCount, "resuming never saves settings")
+        // A departure request that can't start (no such deadline command):
+        // Quickshell emits no exited(), only running -> false. The request
+        // still ends: the failure shows and the refresh queued behind it runs.
+        s.deadline = ["/nonexistent/foamy-no-such-command"]
+        s.refresh(true, true)
+        s.refresh(true, true)
+        check(s.inFlight && s.pendingRefresh, "a second refresh queues behind the first")
+        break
+      case 9:
+        if (s.inFlight || s.pendingRefresh) { shell.step--; break }
+        check(!s.loading && s.report.error === "Train request failed. Try Refresh.",
+              "a request that can't start fails visibly: " + s.report.status + "/" + s.report.error)
+        s.deadline = ["timeout", "--kill-after=2s", "18s"]
+        s.refresh(true, true)
+        break
+      case 10:
+        if (s.inFlight) { shell.step--; break }
+        check(s.report.errorCode === "offline" && s.report.error !== "Train request failed. Try Refresh.",
+              "the next request runs normally: " + s.report.errorCode)
         console.log("FOAMY DONE")
         Qt.quit()
       }

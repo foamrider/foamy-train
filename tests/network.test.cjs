@@ -4,6 +4,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const test = require("node:test");
 const FoamyNative = require("../kit/node-loader.cjs").load("FoamyNative");
+const Model = require("../Model.js");
 
 // Exercise TrainService's production functions with observable process,
 // timer and lock-registry boundaries.
@@ -31,22 +32,24 @@ function timer() {
     stop() { this.running = false; } };
 }
 function fixture(lock) {
-  const c = controller({ active: true, configured: true, sessionLocked: false, withinSchedule: true, demanded: false,
+  let c = null;
+  c = controller({ active: true, configured: true, sessionLocked: false, withinSchedule: true, demanded: false,
     networkReady: false, networkRetries: 0, networkRetry: timer(), pollTimer: timer(), canPoll: false, pollInterval: 60,
-    statusProcess: { running: false }, generation: 7,
+    statusProcess: { running: false }, statusOutput: { text: "" }, generation: 7, requestedGeneration: 0,
+    inFlight: false, deadline: ["timeout", "--kill-after=2s", "18s"], Model,
     route: { from: { id: "NSR:StopPlace:1", name: "One" }, to: { id: "NSR:StopPlace:2", name: "Two" } },
     pluginDir: "/fixture", helperUnavailable: false, FoamyNative, report: { status: "ready", updatedAt: 0 },
     language: "en", lookAheadHours: 24, lastAttempt: 0,
     lockProbeAvailable: true, lockInProcess: false, lockProbeFailures: 0, lockForce: false,
     pendingRefresh: false, pendingForce: false, lockGeneration: 0, Math, JSON, String, Date,
-    Qt: { callLater() {} }, drainRefresh() {},
+    Qt: { callLater(fn) { c.callLater.push(fn); } }, callLater: [], drainRefresh() {},
     IpcResolver: { call: (context, t, m, a) => {
       assert.equal(JSON.stringify([t, m, a]), JSON.stringify(["lock", "isLocked", []]));
       return lock === undefined || lock === null ? { ran: false } : { ran: true, output: String(lock) };
     } },
     lockProbing: false,
     peer: { calls: [], call(t, m, a, done) { this.calls.push([t, m, a]); this.done = done; } },
-  }, ["canFetch", "refresh", "fetch", "lockProbeDone", "startLockProbe", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed", "helperFailed", "fail"]);
+  }, ["canFetch", "refresh", "fetch", "lockProbeDone", "startLockProbe", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed", "helperFailed", "fail", "finishFetch"]);
   // The service's `live` binding: the schedule is in force or a popup is open.
   Object.defineProperty(c, "live", { get() { return c.withinSchedule || c.demanded; } });
   return c;
@@ -73,9 +76,9 @@ test("the native helper runs under the same timeout with the route on stdin", ()
   assert.deepEqual(Array.from(c.statusProcess.command).slice(9), ["--language", "nb", "--hours", "3", "--route-stdin", "--offline"]);
 });
 test("an unavailable helper (exit 126/127) is reported once and never retried", () => {
-  assert.match(qml, /if \(FoamyNative\.unavailable\(code\)\) \{\s*root\.helperFailed\(\)\s*return/);
-  const c = fixture(false); c.networkReady = true; c.pendingRefresh = true;
-  c.helperFailed();
+  const c = fixture(false); c.networkReady = true;
+  c.refresh(true, true); c.pendingRefresh = true;
+  c.statusProcess.running = false; c.finishFetch(127, true);
   assert.equal(c.helperUnavailable, true);
   assert.equal(c.report.error, FoamyNative.UNAVAILABLE_TEXT);
   assert.equal(c.pendingRefresh, false);
@@ -83,6 +86,36 @@ test("an unavailable helper (exit 126/127) is reported once and never retried", 
   c.refresh(true, true); c.retryNetworkRequest();
   assert.equal(c.statusProcess.running, false);
   assert.equal(c.networkRetry.starts, 0);
+});
+test("each fetch ends once: exited, then the running -> false that follows", () => {
+  const reply = JSON.stringify(Object.assign(Model.blank("ok"), { updatedAt: 1 }));
+  const c = fixture(false); c.networkReady = true;
+  c.refresh(true, true);
+  assert.equal(c.inFlight, true);
+  c.statusOutput.text = reply; c.statusProcess.running = false;
+  c.finishFetch(0, true); c.finishFetch(-1, false);
+  assert.equal(c.report.status, "ok");
+  assert.equal(c.report.error, "");
+  assert.equal(c.callLater.length, 1, "the queue drains once");
+});
+test("a fetch that never starts reports failure and drains the queue", () => {
+  const c = fixture(false); c.networkReady = true;
+  c.refresh(true, true); c.pendingRefresh = true;
+  c.statusProcess.running = false; c.finishFetch(-1, false);
+  assert.equal(c.inFlight, false);
+  assert.equal(c.report.status, "error");
+  assert.equal(c.report.error, "Train request failed. Try Refresh.");
+  assert.equal(c.networkRetry.starts, 1, "the usual bounded retry");
+  assert.equal(c.callLater.length, 1);
+  assert.equal(c.callLater[0], c.drainRefresh);
+});
+test("a fetch for a replaced route or setting is dropped", () => {
+  const c = fixture(false); c.networkReady = true;
+  c.refresh(true, true); c.generation++;
+  c.statusOutput.text = "not json"; c.statusProcess.running = false;
+  c.finishFetch(0, true);
+  assert.equal(c.report.status, "ready");
+  assert.equal(c.callLater.length, 1);
 });
 test("a reconnect during an active worker queues one forced refresh", () => {
   const c = fixture(false); c.statusProcess.running = true; c.networkReady = true;

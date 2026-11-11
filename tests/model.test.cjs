@@ -130,3 +130,76 @@ test('schedule: snoozing and resuming override the schedule until the next day',
   assert.equal(Schedule.parseOverride('not json', 0), null);
   assert.equal(Schedule.serializeOverride(null), '{"version":1,"override":null}\n');
 });
+
+// The report contract (Model.limits, the numbers in native/src/entur.rs).
+const notice=(id,text='x',extra)=>({id,summary:text,detail:text,kind:'warning',scopeLabel:text,...extra});
+const departure=(id,notices=[])=>({id,line:'R10',platform:'1',aimed:1,expected:1,arrival:1,delay:0,duration:10,
+  aimedTime:'10:00',expectedTime:'10:00',arrivalTime:'10:10',realtime:true,cancelled:false,notices});
+const reply=(changes)=>JSON.stringify({...Model.blank('ok'),updatedAt:100,...changes});
+const codePoints=s=>[...s].length;
+test('clip cuts whole code points and marks the cut',()=>{
+ for(const [text,limit,expected] of [['ab',5,'ab'],['abc',3,'abc'],['abcd',3,'ab…'],['øøøø',2,'ø…'],['🚆🚆🚆',2,'🚆…'],['x',1,'x'],['xy',1,'…']])
+  assert.equal(Model.clip(text,limit),expected,text);
+ assert.deepEqual(Model.limits,{stations:8,departures:6,notices:3,routeNotices:5,summary:200,detail:600,scope:100,id:100,code:20,label:160});
+});
+test('a reply within the contract is unchanged',()=>{
+ const r={...Model.blank('ok'),updatedAt:100,searchHours:3,departures:[departure('a',[notice('n1')])],routeNotices:[notice('r1')]};
+ assert.deepEqual(Model.parse(JSON.stringify(r)),r);
+});
+test('oversized notice lists keep the first distinct ones and say so',()=>{
+ // The marketplace review's shape: 10,000 unique route notices, below the 2 MB reply cap.
+ const many=n=>Array.from({length:n},(_,i)=>notice('n'+i));
+ const text=reply({departures:Array.from({length:20},(_,d)=>departure('d'+d,[notice('n0'),...many(100)])),routeNotices:many(10000)});
+ assert.ok(text.length<2000000,String(text.length));
+ const r=Model.parse(text);
+ assert.deepEqual(r.departures.map(d=>d.id),['d0','d1','d2','d3','d4','d5']);
+ for(const d of r.departures)assert.deepEqual(d.notices.map(n=>n.id),['n0','n1','n2'],'deduplicated before counting');
+ assert.deepEqual(r.routeNotices.map(n=>n.id),['n0','n1','n2','n3','n4']);
+ assert.equal(r.noticesOmitted,true);
+ // Duplicates alone never count as left out.
+ const same=Model.parse(reply({departures:[departure('a',[notice('n1'),notice('n1'),notice('n2')])],routeNotices:[notice('r'),notice('r')]}));
+ assert.equal(same.departures[0].notices.length,2);
+ assert.equal(same.routeNotices.length,1);
+ assert.equal(same.noticesOmitted,undefined);
+ // Exactly at the limits: nothing is left out.
+ assert.equal(Model.parse(reply({departures:[departure('a',many(3))],routeNotices:many(5)})).noticesOmitted,undefined);
+});
+test('oversized notice text is cut, never inside a surrogate pair',()=>{
+ const long='🚆'.repeat(5000);
+ const r=Model.parse(reply({departures:[{...departure(long,[notice(long,long)]),line:long,platform:long}],routeNotices:[notice('r',long)]}));
+ const d=r.departures[0],n=d.notices[0],route=r.routeNotices[0];
+ for(const [value,limit] of [[n.id,100],[n.summary,200],[n.detail,600],[n.scopeLabel,100],[route.summary,200],[d.id,100],[d.line,20],[d.platform,20]]){
+  assert.equal(codePoints(value),limit);
+  assert.ok(value.endsWith('🚆…'),value.slice(-4));
+  assert.ok(!/[\ud800-\udbff](?![\udc00-\udfff])/.test(value),'no lone high surrogate');
+ }
+ assert.equal(r.noticesOmitted,undefined,'cutting text leaves nothing out');
+ assert.deepEqual(Model.parse(JSON.stringify(r)),r,'the cut report is within the contract');
+});
+test('a cached report from an older helper is bounded like a live one',()=>{
+ // The helper serves the stored snapshot as stale when Entur can't be reached.
+ const old={...Model.blank('stale'),stale:true,updatedAt:100,error:'Offline. Showing the last available update.',errorCode:'offline',
+  route:{from:{id:'NSR:StopPlace:1',name:'Central'},to:{id:'NSR:StopPlace:2',name:'Airport'}},searchHours:24,wideSince:90,
+  departures:Array.from({length:12},(_,d)=>departure('d'+d,Array.from({length:500},(_,i)=>notice('n'+i,'x'.repeat(2000))))),
+  routeNotices:Array.from({length:500},(_,i)=>notice('r'+i))};
+ const r=Model.parse(JSON.stringify(old));
+ assert.equal(r.status,'stale');
+ assert.equal(r.departures.length,6);
+ assert.ok(r.departures.every(d=>d.notices.length===3&&codePoints(d.notices[0].detail)===600));
+ assert.equal(r.routeNotices.length,5);
+ assert.equal(r.noticesOmitted,true);
+ assert.deepEqual([r.searchHours,r.wideSince,r.errorCode],[24,90,'offline']);
+ assert.throws(()=>Model.parse(reply({noticesOmitted:'yes'})));
+ assert.throws(()=>Model.parse(reply({routeNotices:[...Array.from({length:10},(_,i)=>notice('r'+i)),{id:'bad'}]})),'every notice is checked');
+});
+test('station search keeps the first eight distinct stations',()=>{
+ const station=i=>({id:'NSR:StopPlace:'+i,name:'Station '+i,label:'Station '+i+', Norway'});
+ const stations=Array.from({length:10000},(_,i)=>station(Math.floor(i/2)));
+ assert.ok(JSON.stringify({status:'ok',stations}).length<2000000);
+ const found=Model.stations({status:'ok',stations});
+ assert.deepEqual(found.map(s=>s.id),Array.from({length:8},(_,i)=>'NSR:StopPlace:'+i));
+ assert.equal(codePoints(Model.stations({stations:[{...station(1),label:'ø'.repeat(400)}]})[0].label),160);
+ assert.deepEqual(Model.stations({stations:[{...station(1),name:'🚆'.repeat(160)}]}).length,1,'names count code points');
+ for(const bad of [{},{stations:{}},{stations:[{...station(1),label:5}]},{stations:[{id:'x',name:'y',label:'z'}]}])
+  assert.throws(()=>Model.stations(bad));
+});

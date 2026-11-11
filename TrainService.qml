@@ -20,7 +20,7 @@ import "Schedule.js" as Schedule
 // within 2 hours, 15 minutes otherwise. Nothing is fetched while the session
 // is locked: before each unattended poll the public `lock isLocked` IPC target
 // is asked (in-process through 4.5's IpcRegistry, else `omarchy-shell`), which
-// both the stock lock and foamy-lock answer (see /tmp/foamy-fix/contracts.md).
+// both the stock lock and foamy-lock answer with "true" or "false".
 QtObject {
   id: root
 
@@ -98,6 +98,10 @@ QtObject {
   property real lastAttempt: 0
   // The poll interval in force when the shown data was requested.
   property int fetchInterval: 60
+  // A fetch started and not yet finished (exited, or failed to start).
+  property bool inFlight: false
+  // The fetch's outer deadline; the helper command follows it.
+  property var deadline: ["timeout", "--kill-after=2s", "18s"]
   readonly property bool loading: statusProcess.running
 
   // --- session lock ----------------------------------------------------------------
@@ -246,13 +250,41 @@ QtObject {
     lastAttempt = Date.now() / 1000
     fetchInterval = pollInterval
     statusProcess.requestInput = JSON.stringify(route) + "\n"
-    statusProcess.command = ["timeout", "--kill-after=2s", "18s"].concat(FoamyNative.command(pluginDir, "foamy-train-helper",
+    statusProcess.command = deadline.concat(FoamyNative.command(pluginDir, "foamy-train-helper",
       ["--language", language === "no" || language === "nb" ? "nb" : "en",
        "--hours", String(lookAheadHours), "--route-stdin"]
       .concat(force ? ["--force"] : []).concat(requestOffline ? ["--offline"] : [])))
     statusProcess.stdinEnabled = true
+    inFlight = true
     statusProcess.running = true
     schedule()
+  }
+
+  // The one end of a fetch: exited, or never started (Quickshell then emits
+  // no exited(), only running -> false). The running -> false that follows
+  // exited() finds nothing in flight. Queued refreshes drain either way.
+  function finishFetch(code, started) {
+    if (!inFlight) return
+    inFlight = false
+    try {
+      if (requestedGeneration !== generation) return
+      if (started && FoamyNative.unavailable(code)) {
+        helperFailed()
+        return
+      }
+      if (!started || code !== 0) {
+        fail("Train request failed. Try Refresh.")
+        retryNetworkRequest()
+        return
+      }
+      report = Model.parse(statusOutput.text)
+      if (["network_error", "http_error"].indexOf(report.errorCode) >= 0) retryNetworkRequest()
+      else resetNetworkRetry()
+    } catch (e) {
+      fail("Invalid train response.")
+    } finally {
+      Qt.callLater(root.drainRefresh)
+    }
   }
 
   function schedule() {
@@ -355,26 +387,7 @@ QtObject {
       stdinEnabled = false
     }
     stdout: StdioCollector { id: statusOutput; waitForEnd: true }
-    onExited: function(code) {
-      try {
-        if (root.requestedGeneration !== root.generation) return
-        if (FoamyNative.unavailable(code)) {
-          root.helperFailed()
-          return
-        }
-        if (code !== 0) {
-          root.fail("Train request failed. Try Refresh.")
-          root.retryNetworkRequest()
-          return
-        }
-        root.report = Model.parse(statusOutput.text)
-        if (["network_error", "http_error"].indexOf(root.report.errorCode) >= 0) root.retryNetworkRequest()
-        else root.resetNetworkRetry()
-      } catch (e) {
-        root.fail("Invalid train response.")
-      } finally {
-        Qt.callLater(root.drainRefresh)
-      }
-    }
+    onExited: function(code) { root.finishFetch(code, true) }
+    onRunningChanged: if (!running) root.finishFetch(-1, false)
   }
 }

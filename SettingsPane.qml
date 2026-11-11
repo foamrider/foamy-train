@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
-import qs.Commons as Commons
 import "kit"
 import "kit/FoamyPrefs.js" as Prefs
 import "Preferences.js" as Schema

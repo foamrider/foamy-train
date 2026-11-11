@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell.Io
-import qs.Commons
 import qs.Commons as Commons
 import "kit"
 import "kit/FoamyNative.js" as FoamyNative
@@ -15,6 +14,8 @@ Column {
   property var selected: null
   // The plugin directory; the search runs bin/<arch>/foamy-train-helper.
   property string pluginDir: ""
+  // At most Model.limits.stations (the helper asks Entur for limit=8 and
+  // keeps that many; Model.stations applies the same limit to each reply).
   property var results: []
   property string error: ""
   property string requestedText: ""
@@ -83,11 +84,9 @@ Column {
         root.error = FoamyI18n.t(data.error || "Station search failed. Try again.")
         return
       }
-      if (!Array.isArray(data.stations) || !data.stations.every(function(s) {
-        return Model.validStation(s) && typeof s.label === "string" && s.label.length <= 160
-      })) throw Error("invalid stations")
-      root.results = data.stations
-      root.error = data.stations.length ? "" : FoamyI18n.t("No stations found.")
+      var stations = Model.stations(data)
+      root.results = stations
+      root.error = stations.length ? "" : FoamyI18n.t("No stations found.")
     } catch (e) {
       root.error = FoamyI18n.t("Station search failed. Try again.")
     }

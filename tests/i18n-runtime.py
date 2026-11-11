@@ -65,10 +65,17 @@ ShellRoot {
     for name in ('XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
         env[name] = str(base / name.lower())
     env['HOME'] = str(base / 'home')
-    for name in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE', 'DISPLAY'):
+    # No compositor, no session or system bus (dead addresses) and no
+    # AppImage library path (an editor's bundled libraries), so the shell
+    # sees nothing of the live session and loads the system Qt.
+    for name in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE', 'DISPLAY', 'LD_LIBRARY_PATH'):
         env.pop(name, None)
+    env['DBUS_SESSION_BUS_ADDRESS'] = 'unix:path=' + str(base / 'no-session-bus')
+    env['DBUS_SYSTEM_BUS_ADDRESS'] = 'unix:path=' + str(base / 'no-system-bus')
+    # Three short timer steps; the outer limit only stops a hung shell, with
+    # room for a loaded machine.
     result = subprocess.run(['quickshell', '-p', str(app), '--no-color'], env=env,
-                            capture_output=True, text=True, timeout=10)
+                            capture_output=True, text=True, timeout=60)
     output = result.stdout + result.stderr
     if result.returncode or 'I18N_RUNTIME_PASS' not in output or any(e in output for e in ['ReferenceError', 'TypeError', 'Unable to assign']):
         raise AssertionError(output)

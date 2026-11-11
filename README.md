@@ -76,6 +76,19 @@ Departures come from Entur's journey planner. To keep requests light:
 Requests use the system's trusted certificates and honour `https_proxy` and
 `no_proxy`.
 
+The popup draws every station and notice it is given, so replies are held to
+small limits: by the helper while it reads Entur's answer (and when it reads
+a cached report, including one an older version wrote), and again by the
+widget for every reply it gets:
+
+- at most 8 stations per search, 6 departures, 3 notices on a departure and
+  5 route notices, counted after duplicates are dropped;
+- notice summaries up to 200 characters, details 600, scope labels 100, ids
+  100, line and platform codes 20 and station labels 160. Longer text is cut
+  and ends in "…".
+
+When a notice is left out, the popup says **Some notices are not shown.**
+
 Your stations and preferences stay in Omarchy's `shell.json`. Station searches
 and selected station IDs are sent to Entur. The station pair is passed to the
 helper on stdin, so it does not appear in the process list. No account or
@@ -145,7 +158,9 @@ omarchy plugin remove foamy.train
 ```
 
 Removal stops departure requests. Cached departure data remains in
-`~/.cache/foamy.train/`; there is no Entur account or subscription to cancel.
+`~/.cache/foamy.train/`, and a snooze, if you used one, in
+`~/.local/state/foamy-train/schedule-override.json`; there is no Entur
+account or subscription to cancel.
 
 Omarchy manages the plugin entry in `shell.json`. Packages and data outside
 the plugin directory are retained unless you remove them separately.

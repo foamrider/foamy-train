@@ -5,18 +5,25 @@ two bar instances share one TrainService (leader configures it), the 4.5
 in-process `lock isLocked` probe pauses polling while locked, the route
 reaches the helper on stdin (never argv), popup demand switches the clock
 to seconds, settings saves keep the route, invalid values are refused, outside the
-schedule the popup still shows departures, and snoozing mutes the widget
-until tomorrow without saving settings (an open popup still fetches).
+schedule the popup still shows departures, snoozing mutes the widget
+until tomorrow without saving settings (an open popup still fetches), and an
+oversized cached report (an older helper's: 10,000 route notices) reaches the
+popup within the report's limits.
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
-The helper runs in offline mode (no network in the sandbox), so Entur is
+The system bus is a dead address, so NetworkManager is invisible and the
+helper runs in offline mode; its Entur endpoint is also overridden with a
+non-loopback URL, which fails every request without connecting. Entur is
 never contacted.
   python3 tests/runtime.py [4.0|4.5|both]   (default both: 4.0 prints SKIP
                                             unless FOAMY_HOST_40 is set)
 """
+import hashlib
+import json
 import os
 import sys
+import time
 from pathlib import Path
 
 KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"))
@@ -69,6 +76,31 @@ ShellRoot {
       route: Fixtures.route
     }
   }
+  // The service's own report in a popup body: its notices are delegates.
+  FloatingWindow {
+    visible: true; implicitWidth: 420; implicitHeight: 300
+    Train.TrainBody {
+      id: live
+      width: 420; height: 300
+      report: Train.TrainService.report
+      nowEpoch: Train.TrainService.nowEpoch
+      stale: Train.TrainService.stale
+      departures: Train.TrainService.departures
+      next: Train.TrainService.next
+      route: Train.TrainService.route
+    }
+  }
+  // Items under `item` whose type name starts with `type`.
+  function count(item, type) {
+    var n = String(item).indexOf(type + "_QMLTYPE") === 0 ? 1 : 0
+    for (var i = 0; i < item.children.length; i++) n += count(item.children[i], type)
+    return n
+  }
+  function find(item, name) {
+    if (item.objectName === name) return item
+    for (var i = 0; i < item.children.length; i++) { var found = find(item.children[i], name); if (found) return found }
+    return null
+  }
   // Station search whose process can't start (no such deadline command):
   // `searching` still clears and the failure shows. Then a helper that
   // isn't there (bash exits 127): the usual unavailable message.
@@ -95,7 +127,9 @@ ShellRoot {
         shell.startSearch("Oslo")
         break
       case 1:
-        check(!search.searching && !search.inFlight, "a search that can't start stops searching")
+        // running -> false for a start that failed arrives asynchronously.
+        if (search.inFlight) { shell.step--; break }
+        check(!search.searching, "a search that can't start stops searching")
         check(search.error === "Station search failed. Try again.", "and says it failed: " + search.error)
         search.deadline = ["timeout", "--kill-after=2s", "18s"]
         shell.startSearch("Bergen")
@@ -124,6 +158,15 @@ ShellRoot {
         check(argv.indexOf("timeout --kill-after=2s 18s bash -c") === 0 && argv.indexOf("foamy-train-helper") >= 0, "the native helper runs under the widget timeout")
         check(s.report.route && s.report.route.to.name === "Lillestrøm", "helper received the route on stdin (" + s.report.status + "/" + s.report.errorCode + ")")
         check(s.report.errorCode === "offline", "sandbox fetch is offline (no network)")
+        check(!s.networkConnected, "the service sees no network connection (system bus isolated)")
+        // The cache holds 10 departures with 300 notices each and 10,000 route notices.
+        var view = live.scroller.contentItem
+        var notices = count(view, "Notice"), cards = count(view, "DepartureCard")
+        check(s.report.status === "stale" && s.report.departures.length === 6 && s.report.routeNotices.length === 5,
+              "an oversized cached report is cut to 6 departures and 5 route notices: " + s.report.departures.length + "/" + s.report.routeNotices.length)
+        check(notices === 23 && cards === 5, "at most 6 x 3 + 5 notice delegates: " + notices + " notices, " + cards + " cards")
+        var omitted = find(view, "noticesOmitted")
+        check(s.report.noticesOmitted === true && omitted && omitted.visible, "the popup says some notices are not shown")
         a.open()
         break
       case 4:
@@ -204,6 +247,33 @@ ShellRoot {
         s.toggleSnooze()
         check(s.withinSchedule && !s.snoozed && s.scheduleOverride === null, "pressing again resumes the schedule")
         check(bar.saved.length === shell.savedCount, "resuming never saves settings")
+        // A departure request that can't start (no such deadline command):
+        // Quickshell emits no exited(), only running -> false. The request
+        // still ends: the failure shows and the refresh queued behind it runs.
+        s.deadline = ["/nonexistent/foamy-no-such-command"]
+        s.refresh(true, true)
+        s.refresh(true, true)
+        check(s.inFlight && s.pendingRefresh, "a second refresh queues behind the first")
+        break
+      case 9:
+        if (s.inFlight || s.pendingRefresh) { shell.step--; break }
+        check(!s.loading && s.report.error === "Train request failed. Try Refresh.",
+              "a request that can't start fails visibly: " + s.report.status + "/" + s.report.error)
+        s.deadline = ["timeout", "--kill-after=2s", "18s"]
+        s.refresh(true, true)
+        break
+      case 10:
+        if (s.inFlight) { shell.step--; break }
+        check(s.report.errorCode === "offline" && s.report.error !== "Train request failed. Try Refresh.",
+              "the next request runs normally: " + s.report.errorCode)
+        // A helper whose search reply lists more stations than the 8 asked for.
+        search.pluginDir = Quickshell.env("FOAMY_TRAIN_FAKE_SEARCH")
+        shell.startSearch("Many")
+        break
+      case 11:
+        if (search.inFlight) { shell.step--; break }
+        check(search.error === "" && search.results.length === 8 && search.results[7].id === "NSR:StopPlace:8",
+              "a long station list shows the first 8: " + search.results.length + " " + search.error)
         console.log("FOAMY DONE")
         Qt.quit()
       }
@@ -211,6 +281,51 @@ ShellRoot {
   }
 }
 '''
+
+
+def fake_search(directory, count=40):
+    """A plugin directory whose helper (either arch) answers every search
+    with `count` valid stations."""
+    stations = [{"id": f"NSR:StopPlace:{n}", "name": f"Station {n}", "label": f"Station {n}, Norway"}
+                for n in range(1, count + 1)]
+    reply = json.dumps({"status": "ok", "stations": stations})
+    for arch in ("x86_64", "aarch64"):
+        helper = directory / "bin" / arch / "foamy-train-helper"
+        helper.parent.mkdir(parents=True)
+        helper.write_text("#!/bin/sh\ncat <<'EOF'\n" + reply + "\nEOF\n")
+        helper.chmod(0o755)
+    return directory
+
+
+def oversized_cache(home, route):
+    """The departure cache an older helper could leave: every notice kept.
+    The route as the service sends it, both languages, the default 24 hours."""
+    now = int(time.time())
+    clock = time.strftime("%H:%M", time.gmtime(now))
+
+    def notice(identifier):
+        return {"id": identifier, "summary": "Signal fault", "detail": "", "kind": "warning", "scopeLabel": ""}
+
+    def departure(i):
+        return {"id": f"sj{i}", "line": "R10", "aimed": now + 600 * i, "expected": now + 600 * i,
+                "arrival": now + 600 * i + 600, "aimedTime": clock, "expectedTime": clock, "arrivalTime": clock,
+                "delay": 0, "duration": 10, "platform": "1", "realtime": True, "cancelled": False,
+                "notices": [notice(f"n{i}-{n}") for n in range(300)]}
+    report = {"status": "ok", "route": route, "departures": [departure(i) for i in range(1, 11)],
+              "routeNotices": [notice(f"r{n}") for n in range(10_000)], "updatedAt": now - 60, "stale": False,
+              "error": "", "errorCode": ""}
+    text = json.dumps(report, ensure_ascii=False) + "\n"
+    assert len(text.encode()) < 2_000_000, len(text)
+    directory = home / ".cache" / "foamy.train"
+    directory.mkdir(parents=True, mode=0o700)
+    for language in ("en", "nb"):
+        key = f"{route['from']['id']}/{route['to']['id']}/{language}/24"
+        path = directory / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+        path.write_text(text)
+        path.chmod(0o600)
+
+
+ROUTE = {"from": {"id": "NSR:StopPlace:59872", "name": "Oslo S"}, "to": {"id": "NSR:StopPlace:62339", "name": "Lillestrøm"}}
 
 
 def main():
@@ -221,7 +336,18 @@ def main():
             print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
             continue
         qml = SHELL.replace("LOCK", LOCK_45 if host == "4.5" else "").replace("HOST", '"%s"' % host)
-        run = harness.Run(host, qml, plugin=PLUGIN, prefix="foamy-train-runtime-")
+        # A stand-in, so the omarchy-shell lock probe (4.0) never reaches a real shell.
+        run = harness.Run(host, qml, plugin=PLUGIN, prefix="foamy-train-runtime-",
+                          fakebin={"omarchy-shell": "#!/bin/sh\nexit 1\n"})
+        # The harness gives qs a private session bus only. On the system bus
+        # NetworkManager reports the real connection, and two seconds later
+        # the service would ask Entur for real departures. A dead system bus
+        # keeps it offline; the non-loopback endpoint override makes any
+        # request that still goes out fail before it connects.
+        run.env["DBUS_SYSTEM_BUS_ADDRESS"] = f"unix:path={run.base}/no-system-bus"
+        run.env["FOAMY_TRAIN_ENTUR_URL"] = "http://entur.invalid"
+        run.env["FOAMY_TRAIN_FAKE_SEARCH"] = str(fake_search(run.base / "fake-search"))
+        oversized_cache(Path(run.env["HOME"]), ROUTE)
         run.run(timeout=60)
         oks = run.log.count("FOAMY OK")
         if run.ok:

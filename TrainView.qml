@@ -352,6 +352,16 @@ Column {
       }
     }
 
+    // The report left notices out (Model.limits): say the lists are partial.
+    TrainText {
+      objectName: "noticesOmitted"
+      visible: !!root.report.noticesOmitted
+      width: details.innerWidth
+      text: FoamyI18n.t("Some notices are not shown.")
+      color: FoamyPalette.secondaryText
+      font.pixelSize: FoamyStyle.font.bodySmall
+    }
+
     Column {
       visible: root.following.length > 0
       width: details.innerWidth

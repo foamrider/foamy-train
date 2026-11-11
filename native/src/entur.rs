@@ -2,6 +2,7 @@
 //! answers and their service notices. The rules (and the order in which
 //! fields are read, so the same inputs fail) are train_fetch.py's.
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::sync::OnceLock;
@@ -13,8 +14,40 @@ use serde_json::{Map, Value, json};
 use crate::py::{self, Dict};
 use crate::{Failure, TrainError};
 
-pub const MAX_LABEL: usize = 160;
+// The report contract: how much provider data a reply may carry. Entur's
+// replies are bounded only by their 2,000,000-byte body (and the station
+// search by its own limit=8 request), and the popup builds every station row
+// and notice eagerly (QML Repeaters), so counts and lengths are capped here
+// while parsing, before anything is kept, and again on a cached snapshot (an
+// older helper's, or an edited one: `bound_report`). Model.js applies the
+// same numbers to every reply it reads. Lengths are code points.
+//
+// Text is cut, never rejected: a long notice is still worth reading, and the
+// trailing `…` shows that it was cut (`clip`). Ids are cut the same way and
+// deduplicated after cutting, so a list never holds two equal keys. Lists
+// keep their first entries; a notice left out marks the report
+// `noticesOmitted`, so the popup never presents a partial list as complete.
+/// Station search results: the request's limit=8.
+pub const MAX_STATIONS: usize = 8;
+/// Departures: the six soonest.
 pub const MAX_DEPARTURES: usize = 6;
+/// Notices on one departure: three keep a card readable, and the popup at
+/// most 6 x 3 + 5 = 23 notices.
+pub const MAX_NOTICES: usize = 3;
+/// Route-wide notices, shown once above the departures.
+pub const MAX_ROUTE_NOTICES: usize = 5;
+/// A notice's headline (Entur summaries are a sentence or two).
+pub const MAX_SUMMARY: usize = 200;
+/// A notice's description and advice, joined: a few short paragraphs.
+pub const MAX_DETAIL: usize = 600;
+/// A notice's scope: line codes and stop place names joined with " · ".
+pub const MAX_SCOPE: usize = 100;
+/// Notice and departure ids (Entur's are short codes like `RUT:SituationNumber:1`).
+pub const MAX_ID: usize = 100;
+/// Line and platform codes ("R10", "11").
+pub const MAX_CODE: usize = 20;
+/// A station's display label.
+pub const MAX_LABEL: usize = 160;
 const MAX_TZIF: u64 = 256 * 1024;
 /// Python's zoneinfo search path (sysconfig TZPATH, then its built-in default).
 const ZONEINFO: [&str; 4] = [
@@ -84,6 +117,21 @@ pub fn validate_route(value: &Value) -> Result<Value, TrainError> {
     Ok(json!({"from": from, "to": to}))
 }
 
+/// `text` in at most `limit` code points (at least 1): cut text ends in `…`.
+/// Model.js's `clip` is the same rule.
+pub fn clip(text: &str, limit: usize) -> String {
+    match text.char_indices().nth(limit) {
+        None => text.to_owned(),
+        Some(_) => {
+            let end = text
+                .char_indices()
+                .nth(limit - 1)
+                .map_or(text.len(), |(at, _)| at);
+            format!("{}…", &text[..end])
+        }
+    }
+}
+
 /// Entur's free-text display label as one bounded line: runs of control
 /// characters become one space, then trim; empty falls back to the name.
 fn label(value: Option<&Value>, fallback: &str) -> String {
@@ -103,10 +151,11 @@ fn label(value: Option<&Value>, fallback: &str) -> String {
         }
     }
     let text = py::strip(&text);
-    py::truncate(if text.is_empty() { fallback } else { text }, MAX_LABEL).to_owned()
+    clip(if text.is_empty() { fallback } else { text }, MAX_LABEL)
 }
 
-/// Geocoder features → rail stations `{"id", "name", "label"}`, deduplicated.
+/// Geocoder features → rail stations `{"id", "name", "label"}`, deduplicated,
+/// the first MAX_STATIONS (the rest of the reply is not read).
 pub fn stations(data: &Object) -> Result<Vec<Value>, TrainError> {
     let Some(Value::Array(features)) = data.get("features") else {
         return Err(BAD_SEARCH);
@@ -114,6 +163,9 @@ pub fn stations(data: &Object) -> Result<Vec<Value>, TrainError> {
     let mut results = Vec::new();
     let mut seen: Vec<String> = Vec::new();
     for feature in features {
+        if results.len() == MAX_STATIONS {
+            break;
+        }
         let Value::Object(feature) = feature else {
             continue;
         };
@@ -183,11 +235,50 @@ const WIDE_TYPES: [&str; 3] = [
     "AffectedStopPlaceOnLine",
 ];
 
-/// Notices → (per departure, route-wide). Route-wide only when every
-/// affected entity is a line or stop place; repeated wording is not scope.
-fn notices(values: &[&Value], language: &str) -> Result<(Vec<Value>, Vec<Value>), TrainError> {
-    let (mut departures, mut broader, mut seen) = (Vec::new(), Vec::new(), Vec::<String>::new());
+/// A notice as the report carries it, every field within the contract.
+fn notice(id: &str, summary: &str, detail: &str, kind: &str, scope: &str) -> Value {
+    json!({"id": clip(id, MAX_ID), "summary": clip(summary, MAX_SUMMARY), "detail": clip(detail, MAX_DETAIL),
+           "kind": kind, "scopeLabel": clip(scope, MAX_SCOPE)})
+}
+
+/// Notices whose id is already in `list`.
+fn listed(list: &[Value], id: &str) -> bool {
+    list.iter().any(|n| n["id"] == id)
+}
+
+/// Notices kept for one list (a departure's, or the route's across all
+/// departures) and whether a further distinct one was left out.
+#[derive(Default)]
+struct NoticeList {
+    list: Vec<Value>,
+    omitted: bool,
+}
+
+impl NoticeList {
+    /// Full, and known to have left one out: nothing more to learn.
+    fn done(&self, limit: usize) -> bool {
+        self.list.len() == limit && self.omitted
+    }
+}
+
+/// A departure's situations → its own notices, with the route-wide ones
+/// added to `route`. Route-wide only when every affected entity is a line or
+/// stop place; repeated wording is not scope. Notices are deduplicated by
+/// their (cut) id before they count against a limit. Once both lists are
+/// full and each has left one out, the remaining situations are not read.
+fn notices(
+    values: &[&Value],
+    language: &str,
+    route: &mut NoticeList,
+) -> Result<NoticeList, TrainError> {
+    let mut own = NoticeList::default();
+    // Ids kept on this departure or seen on the route: at most
+    // MAX_NOTICES + MAX_ROUTE_NOTICES.
+    let mut seen: Vec<String> = Vec::new();
     for value in values {
+        if own.done(MAX_NOTICES) && route.done(MAX_ROUTE_NOTICES) {
+            break;
+        }
         let Value::Object(value) = value else {
             continue;
         };
@@ -211,14 +302,16 @@ fn notices(values: &[&Value], language: &str) -> Result<(Vec<Value>, Vec<Value>)
             }
         }
         let detail = details.join("\n\n");
-        let identity = match py::or_none(value.get("id")) {
-            Some(id) => py::str_of(id),
-            None => format!("{summary}{detail}"),
-        };
+        let identity = clip(
+            &match py::or_none(value.get("id")) {
+                Some(id) => py::str_of(id),
+                None => format!("{summary}{detail}"),
+            },
+            MAX_ID,
+        );
         if seen.contains(&identity) {
             continue;
         }
-        seen.push(identity.clone());
         let affected = py::or_none(value.get("affects"));
         let wide = match affected {
             None => false,
@@ -230,7 +323,8 @@ fn notices(values: &[&Value], language: &str) -> Result<(Vec<Value>, Vec<Value>)
             // `for a in 5` raises TypeError.
             Some(_) => return Err(INVALID),
         };
-        let mut labels: Vec<String> = Vec::new();
+        // Every entity is checked; labels stop once they fill the scope.
+        let (mut labels, mut width): (Vec<&str>, usize) = (Vec::new(), 0);
         if wide {
             for entity in affected.and_then(Value::as_array).into_iter().flatten() {
                 for (field, key) in [("line", "publicCode"), ("stopPlace", "name")] {
@@ -240,8 +334,9 @@ fn notices(values: &[&Value], language: &str) -> Result<(Vec<Value>, Vec<Value>)
                     match py::or_none(named) {
                         None => {}
                         Some(Value::String(text)) => {
-                            if !labels.contains(text) {
-                                labels.push(text.clone());
+                            if width <= MAX_SCOPE && !labels.contains(&text.as_str()) {
+                                width += py::len(text) + 3;
+                                labels.push(text);
                             }
                         }
                         // " · ".join() of a non-string raises TypeError.
@@ -250,20 +345,34 @@ fn notices(values: &[&Value], language: &str) -> Result<(Vec<Value>, Vec<Value>)
                 }
             }
         }
+        let (kept, limit) = if wide {
+            if listed(&route.list, &identity) {
+                seen.push(identity);
+                continue;
+            }
+            (&mut *route, MAX_ROUTE_NOTICES)
+        } else {
+            (&mut own, MAX_NOTICES)
+        };
+        if kept.list.len() == limit {
+            kept.omitted = true;
+            continue;
+        }
         let kind = if value.get("reportType").and_then(Value::as_str) == Some("general") {
             "info"
         } else {
             "warning"
         };
-        let notice = json!({"id": identity, "summary": summary, "detail": detail, "kind": kind,
-                            "scopeLabel": labels.join(" · ")});
-        if wide {
-            broader.push(notice)
-        } else {
-            departures.push(notice)
-        }
+        kept.list.push(notice(
+            &identity,
+            &summary,
+            &detail,
+            kind,
+            &labels.join(" · "),
+        ));
+        seen.push(identity);
     }
-    Ok((departures, broader))
+    Ok(own)
 }
 
 /// Unix seconds of an ISO 8601 date-time with a UTC offset, truncated
@@ -449,9 +558,11 @@ pub fn parse_response(
         return Err(Failure::Train(INVALID));
     };
     let bad = |()| Failure::Train(INVALID);
-    let mut departures: Vec<(i64, i64, Value)> = Vec::new();
-    let (mut route_notices, mut seen, mut seen_notices) =
-        (Vec::new(), Vec::<String>::new(), Vec::<String>::new());
+    // The MAX_DEPARTURES soonest so far, in report order (a stable sort by
+    // expected then aimed time), each with whether it left a notice out.
+    let mut departures: Vec<(i64, i64, Value, bool)> = Vec::new();
+    let mut route_notices = NoticeList::default();
+    let mut seen = HashSet::<String>::new();
     for pattern in patterns {
         let legs = index(pattern, "legs").map_err(wrap)?;
         // One rail leg only: never the first leg of a transfer or a replacement bus.
@@ -486,25 +597,17 @@ pub fn parse_response(
             .or_else(|| py::or_none(leg.get("id")))
             .map(py::str_of)
             .unwrap_or_default();
-        let identity = format!("{name}:{aimed}");
-        if seen.contains(&identity) {
+        let identity = clip(&format!("{name}:{aimed}"), MAX_ID);
+        if !seen.insert(identity.clone()) {
             continue;
         }
-        seen.push(identity.clone());
         let situations = concat(&[
             leg.get("situations"),
             start.get("situations").map_err(bad)?,
             end.get("situations").map_err(bad)?,
         ])
         .map_err(wrap)?;
-        let (local, wide) = notices(&situations, language).map_err(wrap)?;
-        for notice in wide {
-            let id = notice["id"].as_str().unwrap_or_default().to_owned();
-            if !seen_notices.contains(&id) {
-                seen_notices.push(id);
-                route_notices.push(notice);
-            }
-        }
+        let own = notices(&situations, language, &mut route_notices).map_err(wrap)?;
         let line = Dict::or_empty(leg.get("line"))
             .get("publicCode")
             .map_err(bad)?;
@@ -512,25 +615,97 @@ pub fn parse_response(
             .get("publicCode")
             .map_err(bad)?;
         let departure = json!({
-            "id": identity, "line": text_or_dash(line), "aimed": aimed, "expected": expected, "arrival": arrival,
+            "id": identity, "line": clip(&text_or_dash(line), MAX_CODE), "aimed": aimed, "expected": expected, "arrival": arrival,
             "aimedTime": time_label(aimed)?, "expectedTime": time_label(expected)?, "arrivalTime": time_label(arrival)?,
             "delay": 0.max((expected - aimed).div_euclid(60)), "duration": 0.max((arrival - expected).div_euclid(60)),
-            "platform": text_or_dash(quay), "realtime": py::is_true(start.get("realtime").map_err(bad)?),
-            "cancelled": cancelled, "notices": local,
+            "platform": clip(&text_or_dash(quay), MAX_CODE), "realtime": py::is_true(start.get("realtime").map_err(bad)?),
+            "cancelled": cancelled, "notices": own.list,
         });
-        departures.push((expected, aimed, departure));
+        // After every earlier departure at the same times, as a stable sort puts it.
+        let at = departures.partition_point(|(e, a, _, _)| (*e, *a) <= (expected, aimed));
+        if at < MAX_DEPARTURES {
+            departures.insert(at, (expected, aimed, departure, own.omitted));
+            departures.truncate(MAX_DEPARTURES);
+        }
     }
-    departures.sort_by_key(|(expected, aimed, _)| (*expected, *aimed));
-    let departures: Vec<Value> = departures
-        .into_iter()
-        .take(MAX_DEPARTURES)
-        .map(|(_, _, d)| d)
-        .collect();
-    let report = json!({"status": "ok", "route": route, "departures": departures, "routeNotices": route_notices,
+    let omitted = route_notices.omitted || departures.iter().any(|(_, _, _, omitted)| *omitted);
+    let departures: Vec<Value> = departures.into_iter().map(|(_, _, d, _)| d).collect();
+    let report = json!({"status": "ok", "route": route, "departures": departures, "routeNotices": route_notices.list,
                         "updatedAt": now, "stale": false, "error": "", "errorCode": ""});
-    match report {
-        Value::Object(report) => Ok(report),
-        _ => unreachable!("json! of an object literal is an object"),
+    let Value::Object(mut report) = report else {
+        unreachable!("json! of an object literal is an object")
+    };
+    if omitted {
+        report.insert("noticesOmitted".into(), true.into());
+    }
+    Ok(report)
+}
+
+/// A notice list within `limit`: fields cut, deduplicated by the cut id.
+/// True when a distinct notice was left out.
+fn bound_notices(list: &mut Vec<Value>, limit: usize) -> bool {
+    let mut omitted = false;
+    let mut kept: Vec<Value> = Vec::new();
+    for n in std::mem::take(list) {
+        let text = |key: &str| n[key].as_str().unwrap_or_default().to_owned();
+        let id = clip(&text("id"), MAX_ID);
+        if listed(&kept, &id) {
+            continue;
+        }
+        if kept.len() == limit {
+            omitted = true;
+            break;
+        }
+        let kind = text("kind");
+        kept.push(notice(
+            &id,
+            &text("summary"),
+            &text("detail"),
+            &kind,
+            &text("scopeLabel"),
+        ));
+    }
+    *list = kept;
+    omitted
+}
+
+/// A cached snapshot (already `cache::valid_snapshot`) within the report
+/// contract, as parse_response would have written it: an older helper kept
+/// every notice at full length. Departures are deduplicated by the cut id and
+/// keep their stored order. Model.js's `parse` does the same to every reply.
+pub fn bound_report(report: &mut Object) {
+    let mut omitted = false;
+    if let Some(Value::Array(departures)) = report.get_mut("departures") {
+        let mut ids: Vec<String> = Vec::new();
+        departures.retain_mut(|d| {
+            let Value::Object(d) = d else { return false };
+            let text = |d: &Object, key: &str| {
+                d.get(key)
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned()
+            };
+            let id = clip(&text(d, "id"), MAX_ID);
+            if ids.len() == MAX_DEPARTURES || ids.contains(&id) {
+                return false;
+            }
+            for key in ["line", "platform"] {
+                let code = clip(&text(d, key), MAX_CODE);
+                d.insert(key.into(), code.into());
+            }
+            if let Some(Value::Array(own)) = d.get_mut("notices") {
+                omitted |= bound_notices(own, MAX_NOTICES);
+            }
+            d.insert("id".into(), id.clone().into());
+            ids.push(id);
+            true
+        });
+    }
+    if let Some(Value::Array(list)) = report.get_mut("routeNotices") {
+        omitted |= bound_notices(list, MAX_ROUTE_NOTICES);
+    }
+    if omitted {
+        report.insert("noticesOmitted".into(), true.into());
     }
 }
 
@@ -679,5 +854,197 @@ mod tests {
             (Some(2), Some(0))
         );
         assert_eq!(d["id"], "t:1790406720");
+    }
+
+    #[test]
+    fn clip_cuts_whole_code_points_with_an_ellipsis() {
+        assert_eq!(clip("ab", 5), "ab");
+        assert_eq!(clip("abc", 3), "abc");
+        assert_eq!(clip("abcd", 3), "ab…");
+        assert_eq!(clip("øøøø", 2), "ø…");
+        assert_eq!(clip("🚆🚆🚆", 2), "🚆…");
+        assert_eq!(clip("x", 1), "x");
+        assert_eq!(clip("xy", 1), "…");
+    }
+
+    fn rail(id: &str, situations: Vec<Value>) -> Value {
+        json!({"id": id, "mode": "rail", "aimedStartTime": "2026-09-26T09:12:00+02:00",
+               "expectedStartTime": "2026-09-26T09:12:00+02:00", "expectedEndTime": "2026-09-26T09:22:00+02:00",
+               "serviceJourney": {"id": id}, "situations": situations})
+    }
+
+    fn report(legs: Vec<Value>) -> Object {
+        let patterns: Vec<Value> = legs.into_iter().map(|leg| json!({"legs": [leg]})).collect();
+        let data = json!({"data": {"trip": {"tripPatterns": patterns}}});
+        assert!(py::dumps(&data).len() < 2_000_000, "below the response cap");
+        parse_response(data.as_object().unwrap(), &route(), "en", 1790406000, 1).unwrap()
+    }
+
+    #[test]
+    fn ten_thousand_situations_keep_three_notices() {
+        // The marketplace review's shape: one valid rail leg, 10,000 unique situations.
+        let many = (0..10_000)
+            .map(|i| json!({"id": format!("n{i}"), "summary": [{"language": "en", "value": "x"}]}))
+            .collect();
+        let report = report(vec![rail("t", many)]);
+        let notices = report["departures"][0]["notices"].as_array().unwrap();
+        let ids: Vec<&str> = notices.iter().map(|n| n["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["n0", "n1", "n2"]);
+        assert_eq!(report["noticesOmitted"], true);
+        assert_eq!(bound(&report), report);
+    }
+
+    #[test]
+    fn route_notices_are_counted_across_departures_after_deduplication() {
+        let wide = |id: String| json!({"id": id, "summary": [{"value": "Works"}], "affects": [{"__typename": "AffectedLine"}]});
+        // The same five route-wide notices on every departure: all kept, none left out.
+        let same: Vec<Value> = (0..6)
+            .map(|d| {
+                rail(
+                    &format!("t{d}"),
+                    (0..5).map(|i| wide(format!("w{i}"))).collect(),
+                )
+            })
+            .collect();
+        let kept = report(same);
+        assert_eq!(kept["routeNotices"].as_array().unwrap().len(), 5);
+        assert!(!kept.contains_key("noticesOmitted"));
+        // 2,000 distinct ones on each of six departures: the first five overall.
+        let distinct: Vec<Value> = (0..6)
+            .map(|d| {
+                rail(
+                    &format!("t{d}"),
+                    (0..2000).map(|i| wide(format!("w{d}-{i}"))).collect(),
+                )
+            })
+            .collect();
+        let report = report(distinct);
+        let ids: Vec<&str> = report["routeNotices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["w0-0", "w0-1", "w0-2", "w0-3", "w0-4"]);
+        assert!(
+            report["departures"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|d| d["notices"] == json!([]))
+        );
+        assert_eq!(report["noticesOmitted"], true);
+    }
+
+    #[test]
+    fn notice_text_and_codes_are_cut_to_the_contract() {
+        let long = "ø".repeat(50_000);
+        let affects: Vec<Value> = (0..5000)
+            .map(|i| json!({"__typename": "AffectedStopPlace", "stopPlace": {"name": format!("Stop {i}")}}))
+            .collect();
+        let situations = vec![
+            json!({"id": long, "summary": [{"value": long}], "description": [{"value": format!("d{long}")}],
+                   "advice": [{"value": format!("a{long}")}]}),
+            json!({"id": "wide", "summary": [{"value": "x"}], "affects": affects}),
+        ];
+        let mut leg = rail("t", situations);
+        leg["line"] = json!({"publicCode": long});
+        leg["fromEstimatedCall"] = json!({"quay": {"publicCode": long}});
+        leg["serviceJourney"] = json!({"id": long});
+        let report = report(vec![leg]);
+        let d = &report["departures"][0];
+        let n = &d["notices"][0];
+        let r = &report["routeNotices"][0];
+        for (text, limit) in [
+            (&n["id"], MAX_ID),
+            (&n["summary"], MAX_SUMMARY),
+            (&n["detail"], MAX_DETAIL),
+            (&r["scopeLabel"], MAX_SCOPE),
+            (&d["id"], MAX_ID),
+            (&d["line"], MAX_CODE),
+            (&d["platform"], MAX_CODE),
+        ] {
+            let text = text.as_str().unwrap();
+            assert_eq!(py::len(text), limit, "{text}");
+            assert!(text.ends_with('…'), "{text}");
+        }
+        assert!(
+            r["scopeLabel"]
+                .as_str()
+                .unwrap()
+                .starts_with("Stop 0 · Stop 1 · ")
+        );
+        assert!(!report.contains_key("noticesOmitted"));
+    }
+
+    #[test]
+    fn station_search_keeps_the_first_eight() {
+        let features: Vec<Value> = (0..10_000)
+            .map(|i| json!({"properties": {"id": format!("NSR:StopPlace:{}", i / 2), "names": {"default": format!("S{i}")},
+                                           "stopPlaceTypes": ["railStation"]}}))
+            .collect();
+        let data = json!({"features": features});
+        assert!(py::dumps(&data).len() < 2_000_000, "below the response cap");
+        let found = stations(data.as_object().unwrap()).unwrap();
+        let ids: Vec<&str> = found.iter().map(|s| s["id"].as_str().unwrap()).collect();
+        assert_eq!(
+            ids,
+            (0..8)
+                .map(|i| format!("NSR:StopPlace:{i}"))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    fn bound(report: &Object) -> Object {
+        let mut copy = report.clone();
+        bound_report(&mut copy);
+        copy
+    }
+
+    #[test]
+    fn an_older_snapshot_is_cut_like_a_fresh_answer() {
+        let n = |id: String, text: &str| json!({"id": id, "summary": text, "detail": text, "kind": "info", "scopeLabel": text});
+        let long = "x".repeat(5000);
+        let departure = |id: String| {
+            json!({"id": id, "line": long, "platform": long, "aimed": 1, "expected": 1, "arrival": 1,
+                   "aimedTime": "10:00", "expectedTime": "10:00", "arrivalTime": "10:10", "delay": 0, "duration": 10,
+                   "realtime": true, "cancelled": false,
+                   "notices": (0..1000).map(|i| n(format!("n{i}"), &long)).collect::<Vec<_>>()})
+        };
+        let mut departures: Vec<Value> = (0..20).map(|i| departure(format!("d{i}"))).collect();
+        departures.insert(1, departure("d0".into()));
+        let mut route_notices = vec![n("dup".into(), "a"), n("dup".into(), "b")];
+        route_notices.extend((0..10_000).map(|i| n(format!("r{i}"), "r")));
+        let old = json!({"status": "ok", "route": route(), "departures": departures, "routeNotices": route_notices,
+                         "updatedAt": 0, "stale": false, "error": "", "errorCode": ""});
+        let cut = bound(old.as_object().unwrap());
+        let departures = cut["departures"].as_array().unwrap();
+        let ids: Vec<&str> = departures
+            .iter()
+            .map(|d| d["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["d0", "d1", "d2", "d3", "d4", "d5"]);
+        for d in departures {
+            assert_eq!(d["notices"].as_array().unwrap().len(), MAX_NOTICES);
+            assert_eq!(py::len(d["line"].as_str().unwrap()), MAX_CODE);
+            let first = &d["notices"][0];
+            assert_eq!(py::len(first["summary"].as_str().unwrap()), MAX_SUMMARY);
+            assert_eq!(py::len(first["detail"].as_str().unwrap()), MAX_DETAIL);
+            assert_eq!(py::len(first["scopeLabel"].as_str().unwrap()), MAX_SCOPE);
+        }
+        let route_ids: Vec<&str> = cut["routeNotices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(route_ids, ["dup", "r0", "r1", "r2", "r3"]);
+        assert_eq!(cut["routeNotices"][0]["summary"], "a");
+        assert_eq!(cut["noticesOmitted"], true);
+        // Within the contract: unchanged, byte for byte.
+        assert_eq!(
+            py::dumps(&Value::Object(bound(&cut))),
+            py::dumps(&Value::Object(cut))
+        );
     }
 }

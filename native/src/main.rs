@@ -36,7 +36,18 @@
 //!   snapshot with the error of this attempt), `error` or `unconfigured`.
 //!   Departure keys: `id line aimed expected arrival aimedTime expectedTime
 //!   arrivalTime delay duration platform realtime cancelled notices`; notice
-//!   keys: `id summary detail kind scopeLabel`.
+//!   keys: `id summary detail kind scopeLabel`. `noticesOmitted: true`
+//!   (after `errorCode`) when a notice was left out by the limits below.
+//!
+//! # Limits
+//!
+//! Replies (fresh or cached) stay within the report contract in `entur.rs`,
+//! the numbers Model.js applies again: at most 8 stations, 6 departures, 3
+//! notices per departure and 5 route notices, deduplicated by id before they
+//! count; summaries 200, details 600, scope labels 100, ids 100, line and
+//! platform codes 20 and station labels 160 code points, cut text ending in
+//! `…`. Lists keep their first entries. A cached snapshot beyond the limits
+//! (an older helper's) is cut the same way when it is read.
 //! - any failure without a snapshot: the same keys with `status` `error`,
 //!   `route` as validated (or `null`) and `error`/`errorCode`:
 //!
@@ -123,6 +134,10 @@
 //!   crashing the helper; `str()` of non-string ids inside arrays or objects
 //!   escapes only common invisible characters.
 //! - A non-UTF-8 `--search` value is `invalid_input` even when short.
+//! - The limits above: Python kept every station and notice at full length.
+//!   Situations past a departure's full notice lists and geocoder features
+//!   past the eighth station are not read, so a malformed one there no
+//!   longer fails the reply. Station labels end in `…` when cut.
 //! - Malformed HTTP replies, a bad proxy port and missing tz data are
 //!   reported (`network_error`, `internal`) instead of a Python traceback.
 
@@ -355,11 +370,19 @@ fn fetch(
     let now = unix_now();
     let path = cache::directory(std::env::var_os("XDG_CACHE_HOME"), std::env::var_os("HOME"))
         .map(|dir| cache::file(&dir, &route, language, hours));
-    // Cache corruption must not prevent a fresh request.
+    // Cache corruption must not prevent a fresh request. A snapshot within
+    // its types but beyond the report's limits (an older helper's) is cut to
+    // them, like a fresh answer.
     let cached = path
         .as_deref()
         .and_then(cache::read)
-        .filter(|v| cache::valid_snapshot(v, &route, now));
+        .filter(|v| cache::valid_snapshot(v, &route, now))
+        .map(|mut v| {
+            if let Value::Object(report) = &mut v {
+                entur::bound_report(report);
+            }
+            v
+        });
     if let Some(snapshot) = &cached {
         let fresh = snapshot["updatedAt"]
             .as_i64()

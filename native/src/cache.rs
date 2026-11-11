@@ -79,7 +79,11 @@ pub fn valid_snapshot(value: &Value, route: &Value, now: i64) -> bool {
     else {
         return false;
     };
-    if !is_str(map.get("error")) || !is_str(map.get("errorCode")) || !is_bool(map.get("stale")) {
+    if !is_str(map.get("error"))
+        || !is_str(map.get("errorCode"))
+        || !is_bool(map.get("stale"))
+        || map.get("noticesOmitted").is_some_and(|v| !v.is_boolean())
+    {
         return false;
     }
     let mut notices: Vec<&Value> = route_notices.iter().collect();

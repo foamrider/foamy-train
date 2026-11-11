@@ -26,14 +26,6 @@ pub fn len(text: &str) -> usize {
     text.chars().count()
 }
 
-/// `text[:limit]` in code points.
-pub fn truncate(text: &str, limit: usize) -> &str {
-    match text.char_indices().nth(limit) {
-        Some((end, _)) => &text[..end],
-        None => text,
-    }
-}
-
 /// `bool(value)`; a missing key (`dict.get` returning `None`) is false.
 pub fn truthy(value: Option<&Value>) -> bool {
     match value {
@@ -292,8 +284,6 @@ mod tests {
     #[test]
     fn code_point_lengths() {
         assert_eq!(len("Lillestrøm"), 10);
-        assert_eq!(truncate("øøø", 2), "øø");
-        assert_eq!(truncate("ab", 5), "ab");
     }
 
     #[test]

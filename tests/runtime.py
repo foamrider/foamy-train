@@ -36,6 +36,7 @@ import Quickshell.Io
 import qs.Commons
 import "harness"
 import "plugin/kit"
+import "plugin/kit/FoamyNative.js" as FoamyNative
 import "plugin" as Train
 import "plugin/tests/Fixtures.js" as Fixtures
 
@@ -68,6 +69,18 @@ ShellRoot {
       route: Fixtures.route
     }
   }
+  // Station search whose process can't start (no such deadline command):
+  // `searching` still clears and the failure shows. Then a helper that
+  // isn't there (bash exits 127): the usual unavailable message.
+  FloatingWindow {
+    visible: true; implicitWidth: 320; implicitHeight: 120
+    Train.StationSearch { id: search; width: 300; label: "From"; pluginDir: "/nonexistent/foamy-train" }
+  }
+  function startSearch(text) {
+    search.input.text = text
+    search.searching = true
+    search.runSearch()
+  }
   Timer {
     interval: 400; repeat: true; running: true
     onTriggered: {
@@ -78,8 +91,14 @@ ShellRoot {
         check(s.refreshSeconds === 300 && s.route && s.route.from.name === "Oslo S", "leader pushed its settings")
         check(s.clock.step === 60000, "minute clock while every popup is closed")
         s.statusProcess.running = false
+        search.deadline = ["/nonexistent/foamy-no-such-command"]
+        shell.startSearch("Oslo")
         break
       case 1:
+        check(!search.searching && !search.inFlight, "a search that can't start stops searching")
+        check(search.error === "Station search failed. Try again.", "and says it failed: " + search.error)
+        search.deadline = ["timeout", "--kill-after=2s", "18s"]
+        shell.startSearch("Bergen")
         s.refresh(false, false)
         if (modern) {
           check(s.lockInProcess && s.sessionLocked, "4.5 in-process lock probe reports locked")
@@ -91,6 +110,8 @@ ShellRoot {
         shell.locked = false
         break
       case 2:
+        if (search.inFlight) { shell.step--; break }
+        check(!search.searching && search.error === FoamyNative.UNAVAILABLE_TEXT, "the next search runs and finishes: " + search.error)
         if (s.loading) { shell.step--; break }
         s.refresh(false, false)
         check(!s.sessionLocked, "unlocked session polls again")

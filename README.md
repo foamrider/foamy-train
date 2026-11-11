@@ -145,7 +145,9 @@ omarchy plugin remove foamy.train
 ```
 
 Removal stops departure requests. Cached departure data remains in
-`~/.cache/foamy.train/`; there is no Entur account or subscription to cancel.
+`~/.cache/foamy.train/`, and a snooze, if you used one, in
+`~/.local/state/foamy-train/schedule-override.json`; there is no Entur
+account or subscription to cancel.
 
 Omarchy manages the plugin entry in `shell.json`. Packages and data outside
 the plugin directory are retained unless you remove them separately.

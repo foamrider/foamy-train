@@ -20,7 +20,7 @@ import "Schedule.js" as Schedule
 // within 2 hours, 15 minutes otherwise. Nothing is fetched while the session
 // is locked: before each unattended poll the public `lock isLocked` IPC target
 // is asked (in-process through 4.5's IpcRegistry, else `omarchy-shell`), which
-// both the stock lock and foamy-lock answer (see /tmp/foamy-fix/contracts.md).
+// both the stock lock and foamy-lock answer with "true" or "false".
 QtObject {
   id: root
 

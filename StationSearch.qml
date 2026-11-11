@@ -21,6 +21,10 @@ Column {
   property int revision: 0
   property int requestedRevision: 0
   property bool searching: false
+  // A search started and not yet finished (exited, or failed to start).
+  property bool inFlight: false
+  // The search's deadline; the helper command follows it.
+  property var deadline: ["timeout", "--kill-after=2s", "18s"]
   property alias input: input
   signal changed
   function selectStation(value) {
@@ -46,9 +50,47 @@ Column {
     requestedText = input.text
     requestedRevision = revision
     // `--search=` keeps a query that starts with "-" from parsing as an option.
-    process.command = ["timeout", "--kill-after=2s", "18s"].concat(
+    process.command = deadline.concat(
       FoamyNative.command(pluginDir, "foamy-train-helper", ["--search=" + requestedText]))
+    inFlight = true
     process.running = true
+  }
+  // The one end of a search: exited, or never started (Quickshell then emits
+  // no exited(), only running -> false). Later calls for the same search
+  // (the running -> false after exited()) find nothing in flight.
+  function finishSearch(code, started) {
+    if (!root.inFlight) return
+    root.inFlight = false
+    // A completed search may belong to a replaced query or a selected result.
+    if (root.requestedRevision !== root.revision) {
+      Qt.callLater(root.runSearch)
+      return
+    }
+    root.searching = false
+    if (!started) {
+      root.error = FoamyI18n.t("Station search failed. Try again.")
+      return
+    }
+    if (FoamyNative.unavailable(code)) {
+      // No helper for this CPU: say so; searches only run on typing, never retried.
+      root.error = FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT)
+      return
+    }
+    try {
+      if (code !== 0) throw Error("search failed")
+      var data = JSON.parse(output.text)
+      if (data.status !== "ok") {
+        root.error = FoamyI18n.t(data.error || "Station search failed. Try again.")
+        return
+      }
+      if (!Array.isArray(data.stations) || !data.stations.every(function(s) {
+        return Model.validStation(s) && typeof s.label === "string" && s.label.length <= 160
+      })) throw Error("invalid stations")
+      root.results = data.stations
+      root.error = data.stations.length ? "" : FoamyI18n.t("No stations found.")
+    } catch (e) {
+      root.error = FoamyI18n.t("Station search failed. Try again.")
+    }
   }
   spacing: FoamyStyle.gapSmall
   TrainText {
@@ -140,33 +182,7 @@ Column {
       id: output
       waitForEnd: true
     }
-    onExited: function(code) {
-      // A completed search may belong to a replaced query or a selected result.
-      if (root.requestedRevision !== root.revision) {
-        Qt.callLater(root.runSearch)
-        return
-      }
-      root.searching = false
-      if (FoamyNative.unavailable(code)) {
-        // No helper for this CPU: say so; searches only run on typing, never retried.
-        root.error = FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT)
-        return
-      }
-      try {
-        if (code !== 0) throw Error("search failed")
-        var data = JSON.parse(output.text)
-        if (data.status !== "ok") {
-          root.error = FoamyI18n.t(data.error || "Station search failed. Try again.")
-          return
-        }
-        if (!Array.isArray(data.stations) || !data.stations.every(function(s) {
-          return Model.validStation(s) && typeof s.label === "string" && s.label.length <= 160
-        })) throw Error("invalid stations")
-        root.results = data.stations
-        root.error = data.stations.length ? "" : FoamyI18n.t("No stations found.")
-      } catch (e) {
-        root.error = FoamyI18n.t("Station search failed. Try again.")
-      }
-    }
+    onExited: function(code) { root.finishSearch(code, true) }
+    onRunningChanged: if (!running) root.finishSearch(-1, false)
   }
 }

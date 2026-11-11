@@ -98,7 +98,9 @@ ShellRoot {
         shell.startSearch("Oslo")
         break
       case 1:
-        check(!search.searching && !search.inFlight, "a search that can't start stops searching")
+        // running -> false for a start that failed arrives asynchronously.
+        if (search.inFlight) { shell.step--; break }
+        check(!search.searching, "a search that can't start stops searching")
         check(search.error === "Station search failed. Try again.", "and says it failed: " + search.error)
         search.deadline = ["timeout", "--kill-after=2s", "18s"]
         shell.startSearch("Bergen")

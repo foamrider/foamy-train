@@ -2,7 +2,6 @@ singleton TrainService 1.0 TrainService.qml
 DepartureCard 1.0 DepartureCard.qml
 Notice 1.0 Notice.qml
 Panel 1.0 Panel.qml
-ScheduleDay 1.0 ScheduleDay.qml
 SettingsPane 1.0 SettingsPane.qml
 StationSearch 1.0 StationSearch.qml
 TrainBar 1.0 TrainBar.qml

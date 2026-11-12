@@ -7,7 +7,7 @@ import "kit"
 import "kit/FoamyIpcResolver.js" as IpcResolver
 import "kit/FoamyNative.js" as FoamyNative
 import "Model.js" as Model
-import "Schedule.js" as Schedule
+import "kit/FoamySchedule.js" as Schedule
 
 // The one Entur client per shell. 4.5 draws a bar per monitor, and a qmldir
 // singleton is shared by every bar instance of this plugin, so the clock, the

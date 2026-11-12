@@ -43,6 +43,7 @@ import "plugin/kit"
 import "plugin/kit/FoamyNative.js" as FoamyNative
 import "plugin" as Train
 import "plugin/tests/Fixtures.js" as Fixtures
+import "plugin/Preferences.js" as Schema
 
 ShellRoot {
   id: shell
@@ -103,6 +104,19 @@ ShellRoot {
   FloatingWindow {
     visible: true; implicitWidth: 320; implicitHeight: 120
     Train.StationSearch { id: search; width: 300; label: "From"; pluginDir: "/nonexistent/foamy-train" }
+  }
+  // The settings page with the schedule on: one row per day.
+  property var paneSettings: ({ scheduleEnabled: true, scheduleMonday: "07:00-09:00", scheduleTuesday: "" })
+  property var paneSaves: []
+  FloatingWindow {
+    visible: true; implicitWidth: 420; implicitHeight: 900
+    Train.SettingsPane {
+      id: pane
+      width: 420
+      settings: shell.paneSettings
+      language: "en"
+      onSaveRequested: function(key, value) { shell.paneSaves.push([key, value]) }
+    }
   }
   function startSearch(text) {
     search.input.text = text
@@ -282,6 +296,31 @@ ShellRoot {
   function step11() {
     check(search.error === "" && search.results.length === 8 && search.results[7].id === "NSR:StopPlace:8",
           "a long station list shows the first 8: " + search.results.length + " " + search.error)
+    when(function() { return find(pane, "scheduleSunday") !== null }, "the settings page lists the schedule days", step12)
+  }
+  // The schedule rows: popup text labels, the switch and the time fields
+  // save the day's range; an invalid time is reported, not saved.
+  function step12() {
+    var monday = find(pane, "scheduleMonday"), tuesday = find(pane, "scheduleTuesday")
+    var labels = []
+    for (var i = 0; i < Schema.dayKeys.length; i++) {
+      var row = find(pane, Schema.dayKeys[i])
+      labels.push(row && count(row, "TrainText") === 1 ? row.label : "?")
+    }
+    check(labels.join(",") === "Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday", "each day row has one TrainText label: " + labels.join(","))
+    var from = find(monday, "fromTime"), to = find(monday, "toTime")
+    check(monday.dayEnabled && from.text === "07:00" && to.text === "09:00" && find(monday, "daySwitch").checked, "Monday shows its range, switched on")
+    check(!tuesday.dayEnabled && !find(tuesday, "daySwitch").checked && !find(tuesday, "fromTime").enabled, "Tuesday is off, its times disabled")
+    find(monday, "daySwitch").toggled()
+    find(tuesday, "daySwitch").toggled()
+    from.text = "08:15"; from.editingFinished()
+    to.text = "25:00"; to.editingFinished()
+    check(JSON.stringify(shell.paneSaves) === JSON.stringify([["scheduleMonday", ""], ["scheduleTuesday", "06:00-18:00"],
+          ["scheduleMonday", "08:15-09:00"], ["scheduleMonday", "invalid"]]), "the row saves: " + JSON.stringify(shell.paneSaves))
+    shell.paneSettings = { scheduleEnabled: true, scheduleMonday: "", scheduleTuesday: "" }
+    check(!monday.dayEnabled && from.text === "07:00", "turned off, Monday keeps its last range in the fields: " + from.text)
+    find(monday, "daySwitch").toggled()
+    check(shell.paneSaves[shell.paneSaves.length - 1][1] === "07:00-09:00", "switched on again, Monday saves its last range")
     console.log("FOAMY DONE")
     Qt.quit()
   }

@@ -4,7 +4,7 @@ import qs.Commons as Commons
 import qs.Ui
 import "kit"
 import "Preferences.js" as Schema
-import "Schedule.js" as Schedule
+import "kit/FoamySchedule.js" as Schedule
 import "Model.js" as Model
 
 // One bar instance (4.5 draws one per monitor). Data, polling and the lock

@@ -181,7 +181,7 @@ FoamySettingsPage {
     }
     Repeater {
       model: root.value("scheduleEnabled") ? Schema.dayKeys : []
-      ScheduleDay {
+      FoamyScheduleDay {
         required property string modelData
         required property int index
         width: parent.width
@@ -189,6 +189,9 @@ FoamySettingsPage {
         label: FoamyI18n.t(Schema.dayLabels[index])
         fromLabel: FoamyI18n.t("From")
         toLabel: FoamyI18n.t("To")
+        labelComponent: Component {
+          TrainText {}
+        }
         value: root.value(modelData)
         enabled: !root.saving
         onChanged: function(range) { root.saveRequested(modelData, range) }

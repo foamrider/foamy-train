@@ -66,6 +66,11 @@ QtObject {
     atomicWrites: true
     printErrors: false
     onLoaded: root.scheduleOverride = Schedule.parseOverride(text(), Date.now())
+    // The snooze still applies in memory, but a restart forgets it.
+    onSaveFailed: function(error) {
+      console.warn("foamy-train: couldn't save the snooze state to " + path + " (" + FileViewError.toString(error)
+        + "); it lasts until the shell restarts")
+    }
   }
   function toggleSnooze() {
     var now = new Date()

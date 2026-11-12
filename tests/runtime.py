@@ -5,9 +5,10 @@ it), the in-process `lock isLocked` probe pauses polling while locked, the route
 reaches the helper on stdin (never argv), popup demand switches the clock
 to seconds, settings saves keep the route, invalid values are refused, outside the
 schedule the popup still shows departures, snoozing mutes the widget
-until tomorrow without saving settings (an open popup still fetches), and an
+until tomorrow without saving settings (an open popup still fetches), an
 oversized cached report (an older helper's: 10,000 route notices) reaches the
-popup within the report's limits.
+popup within the report's limits, the schedule rows save their days, and a
+snooze that can't be saved still applies and is logged.
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
@@ -321,8 +322,28 @@ ShellRoot {
     check(!monday.dayEnabled && from.text === "07:00", "turned off, Monday keeps its last range in the fields: " + from.text)
     find(monday, "daySwitch").toggled()
     check(shell.paneSaves[shell.paneSaves.length - 1][1] === "07:00-09:00", "switched on again, Monday saves its last range")
-    console.log("FOAMY DONE")
-    Qt.quit()
+    // The snooze state file can't be written (a read-only state folder): the
+    // snooze still applies, and the failed save is logged (runtime.py checks).
+    shell.overridePath = s.overridePath
+    s.overridePath = Quickshell.env("FOAMY_TRAIN_READONLY_STATE") + "/foamy-train/schedule-override.json"
+    s.toggleSnooze()
+    check(s.snoozed, "a snooze that can't be saved still applies")
+    when(function() { return shell.saveFailures === 1 }, "the snooze save fails", step13)
+  }
+  property string overridePath: ""
+  property int saveFailures: 0
+  Connections {
+    target: Train.TrainService.overrideFile
+    function onSaveFailed() { shell.saveFailures++ }
+  }
+  function step13() {
+    s.toggleSnooze()
+    check(!s.snoozed, "resuming works the same way")
+    when(function() { return shell.saveFailures === 2 }, "the resume save fails", function() {
+      s.overridePath = shell.overridePath
+      console.log("FOAMY DONE")
+      Qt.quit()
+    })
   }
 }
 '''
@@ -382,8 +403,17 @@ def main():
     run.env["FOAMY_TRAIN_ENTUR_URL"] = "http://entur.invalid"
     run.env["FOAMY_TRAIN_FAKE_SEARCH"] = str(fake_search(run.base / "fake-search"))
     oversized_cache(Path(run.env["HOME"]), ROUTE)
+    readonly = run.base / "readonly-state"
+    readonly.mkdir(mode=0o500)
+    run.env["FOAMY_TRAIN_READONLY_STATE"] = str(readonly)
     run.run(timeout=90)
+    readonly.chmod(0o700)
     oks = run.log.count("FOAMY OK")
+    # A snooze or resume that can't be saved is logged, once each.
+    unsaved = run.log.count("foamy-train: couldn't save the snooze state to ")
+    if unsaved != 2:
+        run.ok = False
+        print(f"failed snooze saves logged: {unsaved}, expected 2")
     # Nothing in the run may reach a host command (the harness stubs them).
     hosts = run.host_commands()
     if hosts:

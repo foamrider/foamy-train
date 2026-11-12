@@ -339,8 +339,27 @@ ShellRoot {
   function step13() {
     s.toggleSnooze()
     check(!s.snoozed, "resuming works the same way")
-    when(function() { return shell.saveFailures === 2 }, "the resume save fails", function() {
-      s.overridePath = shell.overridePath
+    when(function() { return shell.saveFailures === 2 }, "the resume save fails", step14)
+  }
+  // The bar tooltip (bar.showTooltip has no size limit): station names come
+  // from Entur, at most 160 code points each, so the route part is capped.
+  function barTooltip() {
+    for (var i = 0; i < a.children.length; i++) if (a.children[i].tooltipText !== undefined) return a.children[i].tooltipText
+    return ""
+  }
+  function step14() {
+    s.overridePath = shell.overridePath
+    var shown = s.route.from.name + " → " + s.route.to.name
+    check(barTooltip().indexOf("Trains · " + shown + " · ") === 0 || barTooltip() === "Trains · " + shown,
+          "a short route is shown whole in the bar tooltip: " + barTooltip())
+    // 160 code points each, the most a saved station name may have.
+    var long = Array(160).join("Ø")
+    // As the host reflects a saved route to every bar instance.
+    shell.entry = { route: { from: { id: "NSR:StopPlace:1", name: long + "1" }, to: { id: "NSR:StopPlace:2", name: long + "2" } }, refreshSeconds: 300 }
+    when(function() { return s.route && s.route.from.id === "NSR:StopPlace:1" }, "the long route reaches the service", function() {
+      var route = barTooltip().split(" · ")[1] || ""
+      check(Array.from(route).length <= 100 && route.slice(-1) === "…" && route.indexOf(long) < 0,
+            "a long route is cut in the bar tooltip: " + Array.from(route).length + " code points")
       console.log("FOAMY DONE")
       Qt.quit()
     })

@@ -5,6 +5,7 @@ import qs.Ui
 import "kit"
 import "Preferences.js" as Schema
 import "kit/FoamySchedule.js" as Schedule
+import "kit/FoamyText.js" as FoamyText
 import "Model.js" as Model
 
 // One bar instance (4.5 draws one per monitor). Data, polling and the lock
@@ -124,8 +125,10 @@ Panel {
     activeColor: Commons.Color.urgent
     dimmed: !TrainService.withinSchedule || TrainService.stale || !TrainService.next
     fixedWidth: root.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
+    // The host tooltip has no size limit; the station names (from Entur, up
+    // to 160 characters each) are cut to one tooltip line.
     tooltipText: FoamyI18n.t("Trains")
-      + (TrainService.route ? " · " + FoamyI18n.t("%1 → %2", [TrainService.route.from.name, TrainService.route.to.name]) : "")
+      + (TrainService.route ? " · " + FoamyText.tooltip(FoamyI18n.t("%1 → %2", [TrainService.route.from.name, TrainService.route.to.name])) : "")
       + (TrainService.snoozed ? " · " + FoamyI18n.t("snoozed") : !TrainService.withinSchedule ? " · " + FoamyI18n.t("outside your schedule") : "")
       + (TrainService.stale ? " · " + FoamyI18n.t("Cached times; live predictions unavailable.") : "")
     TrainBar {

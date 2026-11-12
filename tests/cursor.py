@@ -8,6 +8,7 @@ on the last stop the pointer or keyboard chose, not ping-pong between the
 last two. Runs on Omarchy 4.5 (the installed shell, or FOAMY_HOST_45).
   python3 tests/cursor.py
 """
+
 import os
 import sys
 from pathlib import Path
@@ -21,7 +22,7 @@ import harness  # noqa: E402
 
 PLUGIN = Path(__file__).resolve().parents[1]
 
-SHELL = r'''
+SHELL = r"""
 import QtQuick
 import Quickshell
 import qs.Commons
@@ -98,7 +99,7 @@ ShellRoot {
     check(body.cursorKey === "", "and does not come back on the next tick")
   }
 }
-'''
+"""
 
 
 def main():

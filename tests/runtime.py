@@ -18,6 +18,7 @@ non-loopback URL, which fails every request without connecting. Entur is
 never contacted.
   python3 tests/runtime.py
 """
+
 import hashlib
 import json
 import os
@@ -34,7 +35,7 @@ import harness  # noqa: E402
 
 PLUGIN = Path(__file__).resolve().parents[1]
 
-SHELL = r'''
+SHELL = r"""
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -365,14 +366,16 @@ ShellRoot {
     })
   }
 }
-'''
+"""
 
 
 def fake_search(directory, count=40):
     """A plugin directory whose helper (either arch) answers every search
     with `count` valid stations."""
-    stations = [{"id": f"NSR:StopPlace:{n}", "name": f"Station {n}", "label": f"Station {n}, Norway"}
-                for n in range(1, count + 1)]
+    stations = [
+        {"id": f"NSR:StopPlace:{n}", "name": f"Station {n}", "label": f"Station {n}, Norway"}
+        for n in range(1, count + 1)
+    ]
     reply = json.dumps({"status": "ok", "stations": stations})
     for arch in ("x86_64", "aarch64"):
         helper = directory / "bin" / arch / "foamy-train-helper"
@@ -392,13 +395,33 @@ def oversized_cache(home, route):
         return {"id": identifier, "summary": "Signal fault", "detail": "", "kind": "warning", "scopeLabel": ""}
 
     def departure(i):
-        return {"id": f"sj{i}", "line": "R10", "aimed": now + 600 * i, "expected": now + 600 * i,
-                "arrival": now + 600 * i + 600, "aimedTime": clock, "expectedTime": clock, "arrivalTime": clock,
-                "delay": 0, "duration": 10, "platform": "1", "realtime": True, "cancelled": False,
-                "notices": [notice(f"n{i}-{n}") for n in range(300)]}
-    report = {"status": "ok", "route": route, "departures": [departure(i) for i in range(1, 11)],
-              "routeNotices": [notice(f"r{n}") for n in range(10_000)], "updatedAt": now - 60, "stale": False,
-              "error": "", "errorCode": ""}
+        return {
+            "id": f"sj{i}",
+            "line": "R10",
+            "aimed": now + 600 * i,
+            "expected": now + 600 * i,
+            "arrival": now + 600 * i + 600,
+            "aimedTime": clock,
+            "expectedTime": clock,
+            "arrivalTime": clock,
+            "delay": 0,
+            "duration": 10,
+            "platform": "1",
+            "realtime": True,
+            "cancelled": False,
+            "notices": [notice(f"n{i}-{n}") for n in range(300)],
+        }
+
+    report = {
+        "status": "ok",
+        "route": route,
+        "departures": [departure(i) for i in range(1, 11)],
+        "routeNotices": [notice(f"r{n}") for n in range(10_000)],
+        "updatedAt": now - 60,
+        "stale": False,
+        "error": "",
+        "errorCode": "",
+    }
     text = json.dumps(report, ensure_ascii=False) + "\n"
     assert len(text.encode()) < 2_000_000, len(text)
     directory = home / ".cache" / "foamy.train"
@@ -410,7 +433,10 @@ def oversized_cache(home, route):
         path.chmod(0o600)
 
 
-ROUTE = {"from": {"id": "NSR:StopPlace:59872", "name": "Oslo S"}, "to": {"id": "NSR:StopPlace:62339", "name": "Lillestrøm"}}
+ROUTE = {
+    "from": {"id": "NSR:StopPlace:59872", "name": "Oslo S"},
+    "to": {"id": "NSR:StopPlace:62339", "name": "Lillestrøm"},
+}
 
 
 def main():

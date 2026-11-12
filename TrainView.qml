@@ -27,39 +27,53 @@ Column {
   // Expanded notice keys (notice detail shown).
   property var expanded: ({})
 
-
   readonly property alias band: band
-  readonly property var following: departures.filter(function(d) { return !root.next || d.id !== root.next.id })
+  readonly property var following: departures.filter(function (d) {
+    return !root.next || d.id !== root.next.id
+  })
   readonly property bool unconfigured: report.status === "unconfigured"
   readonly property color warningText: FoamyPalette.onSurface(FoamyPalette.warning)
 
-  function formatNumber(value) { return FoamyI18n.number(value, 0) }
-  function durationText(minutes) { return Model.duration(minutes, root.language, root.formatNumber) }
+  function formatNumber(value) {
+    return FoamyI18n.number(value, 0)
+  }
+  function durationText(minutes) {
+    return Model.duration(minutes, root.language, root.formatNumber)
+  }
   function updatedText() {
     return FoamyI18n.updatedAgo(report.updatedAt * 1000, nowEpoch * 1000)
   }
   function noticeStops(prefix, notices) {
-    return notices.filter(function(n) { return n.detail !== "" }).map(function(n) { return prefix + n.id })
+    return notices.filter(function (n) {
+      return n.detail !== ""
+    }).map(function (n) {
+      return prefix + n.id
+    })
   }
   readonly property var stops: {
     var list = []
-    if (report.route) list.push("swap")
+    if (report.route)
+      list.push("swap")
     // Settings: the cog, or the ⋯ button while Settings is in its menu.
     list.push("settings")
-    if (unconfigured) list.push("choose")
+    if (unconfigured)
+      list.push("choose")
     if (!unconfigured) {
-      if (next) list = list.concat(noticeStops("next/", next.notices))
+      if (next)
+        list = list.concat(noticeStops("next/", next.notices))
       list = list.concat(noticeStops("route/", report.routeNotices))
-      following.forEach(function(d) { list = list.concat(root.noticeStops("dep/" + d.id + "/", d.notices)) })
+      following.forEach(function (d) {
+        list = list.concat(root.noticeStops("dep/" + d.id + "/", d.notices))
+      })
       list.push("refresh")
     }
     return list
   }
 
-  signal settingsRequested()
-  signal swapRequested()
-  signal snoozeRequested()
-  signal refreshRequested()
+  signal settingsRequested
+  signal swapRequested
+  signal snoozeRequested
+  signal refreshRequested
   signal stopHovered(string key)
   signal revealRequested(Item item)
   // A notice opened its detail: scroll it into view as it grows.
@@ -67,10 +81,9 @@ Column {
 
   // Header and footer stops scroll into view here; notices reveal themselves.
   onCursorKeyChanged: {
-    var item = cursorKey === "swap" || cursorKey === "settings" ? band
-      : cursorKey === "choose" ? chooseAction
-      : cursorKey === "refresh" ? refreshAction : null
-    if (item) revealRequested(item)
+    var item = cursorKey === "swap" || cursorKey === "settings" ? band : cursorKey === "choose" ? chooseAction : cursorKey === "refresh" ? refreshAction : null
+    if (item)
+      revealRequested(item)
   }
 
   function toggle(key) {
@@ -79,11 +92,18 @@ Column {
     expanded = state
   }
   function activate(key) {
-    if (key === "swap") { if (!routeBusy) swapRequested() }
-    else if (key === "settings" && band.settingsInMenu) band.openMenu(true)
-    else if (key === "settings" || key === "choose") settingsRequested()
-    else if (key === "refresh") { if (!loading && !routeBusy) refreshRequested() }
-    else if (key !== "") toggle(key)
+    if (key === "swap") {
+      if (!routeBusy)
+        swapRequested()
+    } else if (key === "settings" && band.settingsInMenu)
+      band.openMenu(true)
+    else if (key === "settings" || key === "choose")
+      settingsRequested()
+    else if (key === "refresh") {
+      if (!loading && !routeBusy)
+        refreshRequested()
+    } else if (key !== "")
+      toggle(key)
   }
 
   spacing: 0
@@ -94,15 +114,20 @@ Column {
     width: parent.width
     iconName: "train"
     title: FoamyI18n.t("Trains")
-    meta: root.report.route ? FoamyI18n.t("%1 → %2", [root.report.route.from.name, root.report.route.to.name])
-      + (root.snoozed ? " · " + FoamyI18n.t("snoozed") : root.outsideSchedule ? " · " + FoamyI18n.t("outside your schedule") : "") : ""
+    meta: root.report.route ? FoamyI18n.t("%1 → %2", [root.report.route.from.name, root.report.route.to.name]) + (root.snoozed ? " · " + FoamyI18n.t("snoozed") : root.outsideSchedule ? " · " + FoamyI18n.t("outside your schedule") : "") : ""
     // Snooze and Settings live in the ⋯ menu: Switch direction and ⋯ on the right.
     maxButtons: 2
     settingsHasCursor: root.cursorKey === "settings"
     menuHasCursor: root.cursorKey === "settings"
     onSettingsClicked: root.settingsRequested()
-    onSettingsHovered: function(hovered) { if (hovered) root.stopHovered("settings") }
-    onMenuHovered: function(hovered) { if (hovered) root.stopHovered("settings") }
+    onSettingsHovered: function (hovered) {
+      if (hovered)
+        root.stopHovered("settings")
+    }
+    onMenuHovered: function (hovered) {
+      if (hovered)
+        root.stopHovered("settings")
+    }
     menuItems: [
       FoamyMenuItem {
         objectName: "snoozeItem"
@@ -121,7 +146,8 @@ Column {
         foreground: FoamyPalette.secondaryText
         actionEnabled: !root.routeBusy
         hasCursor: root.cursorKey === "swap"
-        onHoveredChanged: if (hovered) root.stopHovered("swap")
+        onHoveredChanged: if (hovered)
+          root.stopHovered("swap")
         onClicked: root.swapRequested()
       }
     ]
@@ -197,8 +223,7 @@ Column {
           }
           TrainText {
             visible: !!root.next && !root.stale
-            text: root.next ? "· " + (root.next.delay > 0 ? root.durationText(root.next.delay) + " " + FoamyI18n.t("late")
-                                                          : FoamyI18n.t(root.next.realtime ? "On time" : "Scheduled")) : ""
+            text: root.next ? "· " + (root.next.delay > 0 ? root.durationText(root.next.delay) + " " + FoamyI18n.t("late") : FoamyI18n.t(root.next.realtime ? "On time" : "Scheduled")) : ""
             color: root.next && root.next.delay > 0 ? root.warningText : FoamyPalette.secondaryText
             wrapMode: Text.NoWrap
           }
@@ -222,11 +247,7 @@ Column {
           width: parent.width
           horizontalAlignment: Text.AlignHCenter
           font.pixelSize: FoamyStyle.font.heading
-          text: root.unconfigured ? FoamyI18n.t("Choose your stations")
-                : root.loading ? FoamyI18n.t("Loading departures…")
-                : root.report.status === "error" ? FoamyI18n.t("No departures available")
-                : root.departures.length ? FoamyI18n.t("All upcoming trains are cancelled")
-                : FoamyI18n.t("No direct trains found")
+          text: root.unconfigured ? FoamyI18n.t("Choose your stations") : root.loading ? FoamyI18n.t("Loading departures…") : root.report.status === "error" ? FoamyI18n.t("No departures available") : root.departures.length ? FoamyI18n.t("All upcoming trains are cancelled") : FoamyI18n.t("No direct trains found")
         }
         TrainText {
           visible: root.unconfigured
@@ -244,7 +265,8 @@ Column {
           label: FoamyI18n.t("Choose stations")
           foreground: Commons.Color.accent
           hasCursor: root.cursorKey === "choose"
-          onHoveredChanged: if (hovered) root.stopHovered("choose")
+          onHoveredChanged: if (hovered)
+            root.stopHovered("choose")
           onClicked: root.settingsRequested()
         }
       }
@@ -269,9 +291,18 @@ Column {
       width: details.innerWidth
       Repeater {
         model: root.next ? [
-          { label: "Platform", value: root.next.platform },
-          { label: "Arrival", value: root.next.arrivalTime },
-          { label: "Journey", value: root.durationText(root.next.duration) }
+          {
+            label: "Platform",
+            value: root.next.platform
+          },
+          {
+            label: "Arrival",
+            value: root.next.arrivalTime
+          },
+          {
+            label: "Journey",
+            value: root.durationText(root.next.duration)
+          }
         ] : []
         Column {
           required property var modelData
@@ -308,8 +339,7 @@ Column {
         width: parent.width - FoamyStyle.rowPadding * 2
         color: root.warningText
         Accessible.role: Accessible.AlertMessage
-        text: (root.stale ? FoamyI18n.t("Cached times; live predictions unavailable.") + (root.report.error ? "\n" : "") : "")
-          + (root.report.error ? FoamyI18n.t(root.report.error) : "")
+        text: (root.stale ? FoamyI18n.t("Cached times; live predictions unavailable.") + (root.report.error ? "\n" : "") : "") + (root.report.error ? FoamyI18n.t(root.report.error) : "")
       }
     }
 
@@ -367,7 +397,7 @@ Column {
       width: details.innerWidth
       spacing: FoamyStyle.rowPadding
       TrainText {
-        text: FoamyI18n.t(root.stale ? "Last known departures" : root.following.some(function(d) {
+        text: FoamyI18n.t(root.stale ? "Last known departures" : root.following.some(function (d) {
           return root.next && d.expected < root.next.expected
         }) ? "Other departures" : "Following departures")
         color: FoamyPalette.secondaryText
@@ -419,7 +449,8 @@ Column {
         spinning: root.loading
         actionEnabled: !root.loading && !root.routeBusy
         hasCursor: root.cursorKey === "refresh"
-        onHoveredChanged: if (hovered) root.stopHovered("refresh")
+        onHoveredChanged: if (hovered)
+          root.stopHovered("refresh")
         onClicked: root.refreshRequested()
       }
     }

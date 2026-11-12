@@ -4,6 +4,7 @@ and an empty PATH. Nothing here contacts Entur.
 
 FOAMY_HELPER selects the helper (a JSON argv prefix); see fake_entur.py.
 """
+
 import copy
 import json
 import stat
@@ -11,9 +12,33 @@ import tempfile
 import time
 import unittest
 
-from fake_entur import (API_PATH, CLIENT, DEPARTURE_KEYS, GEOCODER_PATH, QUERY, REPORT_KEYS, ROUTE, CertAuthority,
-                        FakeEntur, FakeProxy, Helper, Reply, base_time, basic, busy, cache_name, feature, hm, iso, leg,
-                        notice, on_time, python_json, temporary, trips)
+from fake_entur import (
+    API_PATH,
+    CLIENT,
+    DEPARTURE_KEYS,
+    GEOCODER_PATH,
+    QUERY,
+    REPORT_KEYS,
+    ROUTE,
+    CertAuthority,
+    FakeEntur,
+    FakeProxy,
+    Helper,
+    Reply,
+    base_time,
+    basic,
+    busy,
+    cache_name,
+    feature,
+    hm,
+    iso,
+    leg,
+    notice,
+    on_time,
+    python_json,
+    temporary,
+    trips,
+)
 
 INVALID = "Entur returned an invalid response. Try Refresh."
 
@@ -55,15 +80,40 @@ class ParserTests(Case):
         start = base_time()
         data = self.plan(trips(leg(start)))
         self.assertEqual(list(data), REPORT_KEYS + ["searchHours"])
-        self.assertEqual((data["status"], data["route"], data["routeNotices"], data["stale"], data["error"],
-                          data["errorCode"], data["searchHours"]), ("ok", ROUTE, [], False, "", "", 3))
+        self.assertEqual(
+            (
+                data["status"],
+                data["route"],
+                data["routeNotices"],
+                data["stale"],
+                data["error"],
+                data["errorCode"],
+                data["searchHours"],
+            ),
+            ("ok", ROUTE, [], False, "", "", 3),
+        )
         self.assertLessEqual(abs(data["updatedAt"] - time.time()), 5)
         d = data["departures"][0]
         self.assertEqual(list(d), DEPARTURE_KEYS)
-        self.assertEqual(d, {"id": f"train-1:{start}", "line": "R10", "aimed": start, "expected": start + 180,
-                             "arrival": start + 780, "aimedTime": hm(start), "expectedTime": hm(start + 180),
-                             "arrivalTime": hm(start + 780), "delay": 3, "duration": 10, "platform": "11",
-                             "realtime": True, "cancelled": False, "notices": []})
+        self.assertEqual(
+            d,
+            {
+                "id": f"train-1:{start}",
+                "line": "R10",
+                "aimed": start,
+                "expected": start + 180,
+                "arrival": start + 780,
+                "aimedTime": hm(start),
+                "expectedTime": hm(start + 180),
+                "arrivalTime": hm(start + 780),
+                "delay": 3,
+                "duration": 10,
+                "platform": "11",
+                "realtime": True,
+                "cancelled": False,
+                "notices": [],
+            },
+        )
 
     def test_times_are_oslo_wall_clock_whatever_the_offset_or_tz(self):
         start = base_time()
@@ -71,21 +121,30 @@ class ParserTests(Case):
         fraction = time.strftime("%Y-%m-%dT%H:%M:%S.250+00:00", time.gmtime(start + 180))
         data = self.plan(trips(leg(start, aimedStartTime=utc, expectedStartTime=fraction)), env={"TZ": "Asia/Tokyo"})
         d = data["departures"][0]
-        self.assertEqual((d["aimed"], d["expected"], d["aimedTime"], d["expectedTime"]),
-                         (start, start + 180, hm(start), hm(start + 180)))
+        self.assertEqual(
+            (d["aimed"], d["expected"], d["aimedTime"], d["expectedTime"]),
+            (start, start + 180, hm(start), hm(start + 180)),
+        )
 
     def test_filters_transfer_walk_and_bus(self):
         start = base_time()
         data = trips(leg(start), leg(start, mode="bus"))
-        data["data"]["trip"]["tripPatterns"] += [{"legs": [leg(start), leg(start, id="other")]},
-                                                 {"legs": [{"mode": "foot"}, leg(start)]}, {"legs": []}]
+        data["data"]["trip"]["tripPatterns"] += [
+            {"legs": [leg(start), leg(start, id="other")]},
+            {"legs": [{"mode": "foot"}, leg(start)]},
+            {"legs": []},
+        ]
         self.assertEqual(len(self.plan(data)["departures"]), 1)
 
     def test_cancellation_at_either_end(self):
         start = base_time()
-        data = self.plan(trips(leg(start, toEstimatedCall={"cancellation": True}),
-                               leg(start + 60, id="b", fromEstimatedCall={"cancellation": True}),
-                               leg(start + 120, id="c", fromEstimatedCall={"cancellation": "yes"})))
+        data = self.plan(
+            trips(
+                leg(start, toEstimatedCall={"cancellation": True}),
+                leg(start + 60, id="b", fromEstimatedCall={"cancellation": True}),
+                leg(start + 120, id="c", fromEstimatedCall={"cancellation": "yes"}),
+            )
+        )
         self.assertEqual([d["cancelled"] for d in data["departures"]], [True, True, False])
 
     def test_repeated_notice_does_not_imply_route_scope(self):
@@ -93,15 +152,20 @@ class ParserTests(Case):
         data = self.plan(trips(leg(start, situations=[notice()]), leg(start + 60, id="train-2", situations=[notice()])))
         self.assertEqual(data["routeNotices"], [])
         self.assertTrue(all(len(d["notices"]) == 1 for d in data["departures"]))
-        self.assertEqual(data["departures"][0]["notices"][0], {"id": "n1", "summary": "Signal fault",
-                                                               "detail": "Allow more time.", "kind": "warning",
-                                                               "scopeLabel": ""})
+        self.assertEqual(
+            data["departures"][0]["notices"][0],
+            {"id": "n1", "summary": "Signal fault", "detail": "Allow more time.", "kind": "warning", "scopeLabel": ""},
+        )
 
     def test_explicit_broad_notice_is_deduplicated_and_labelled(self):
         start = base_time()
-        n = notice(affects=[{"__typename": "AffectedLine", "line": {"publicCode": "R10"}},
-                            {"__typename": "AffectedStopPlace", "stopPlace": {"name": "Oslo S"}},
-                            {"__typename": "AffectedStopPlaceOnLine", "line": {"publicCode": "R10"}, "stopPlace": {}}])
+        n = notice(
+            affects=[
+                {"__typename": "AffectedLine", "line": {"publicCode": "R10"}},
+                {"__typename": "AffectedStopPlace", "stopPlace": {"name": "Oslo S"}},
+                {"__typename": "AffectedStopPlaceOnLine", "line": {"publicCode": "R10"}, "stopPlace": {}},
+            ]
+        )
         data = self.plan(trips(leg(start, situations=[n]), leg(start + 60, id="train-2", situations=[n])))
         self.assertEqual(len(data["routeNotices"]), 1)
         self.assertEqual(data["routeNotices"][0]["scopeLabel"], "R10 · Oslo S")
@@ -115,16 +179,25 @@ class ParserTests(Case):
     def test_notices_from_the_leg_and_both_calls_are_merged_and_deduplicated(self):
         start = base_time()
         late = notice("c", summary=[], advice=[{"value": "Walk"}])
-        data = self.plan(trips(leg(start, situations=[notice("a")],
-                                   fromEstimatedCall={"situations": [notice("b"), notice("a")]},
-                                   toEstimatedCall={"situations": [late]})))
+        data = self.plan(
+            trips(
+                leg(
+                    start,
+                    situations=[notice("a")],
+                    fromEstimatedCall={"situations": [notice("b"), notice("a")]},
+                    toEstimatedCall={"situations": [late]},
+                )
+            )
+        )
         notices = data["departures"][0]["notices"]
         self.assertEqual([n["id"] for n in notices], ["a", "b", "c"])
         self.assertEqual((notices[2]["summary"], notices[2]["detail"]), ("Allow more time.", "Walk"))
 
     def test_info_without_delay_and_localization(self):
         start = base_time()
-        n = notice(reportType="general", advice=[{"language": "no", "value": " Gå "}, {"language": "en", "value": "Walk"}])
+        n = notice(
+            reportType="general", advice=[{"language": "no", "value": " Gå "}, {"language": "en", "value": "Walk"}]
+        )
         args = ("--force", "--hours", "3", "--language", "nb")
         d = self.plan(trips(on_time(start, situations=[n])), args=args)["departures"][0]
         self.assertEqual(d["delay"], 0)
@@ -134,38 +207,61 @@ class ParserTests(Case):
 
     def test_notice_text_falls_back_and_identity_defaults_to_text(self):
         start = base_time()
-        anonymous = {"summary": [{"language": "de", "value": "Störung"}], "description": [{"value": 5}, {"value": "Störung"}]}
+        anonymous = {
+            "summary": [{"language": "de", "value": "Störung"}],
+            "description": [{"value": 5}, {"value": "Störung"}],
+        }
         empty = {"id": "e", "summary": [], "description": "text"}
         d = self.plan(trips(leg(start, situations=[anonymous, empty, "x", None])))["departures"][0]
-        self.assertEqual(d["notices"], [{"id": "Störung", "summary": "Störung", "detail": "", "kind": "warning",
-                                         "scopeLabel": ""}])
+        self.assertEqual(
+            d["notices"], [{"id": "Störung", "summary": "Störung", "detail": "", "kind": "warning", "scopeLabel": ""}]
+        )
 
     def test_empty_and_malformed_are_distinct(self):
         # Failures write no cache, so each report is an error rather than stale.
         start = base_time()
         line_code = notice(affects=[{"__typename": "AffectedLine", "line": {"publicCode": 5}}])
-        malformed = [{}, {"data": None}, {"data": {"trip": {"tripPatterns": {}}}}, trips(leg(start, expectedStartTime="bad")),
-                     trips(leg(start, expectedStartTime=iso(start)[:19])), trips(leg(start, aimedStartTime=None)),
-                     {"data": {"trip": {"tripPatterns": ["x"]}}}, {"data": {"trip": {"tripPatterns": [{"legs": ["x"]}]}}},
-                     trips(leg(start, situations={"a": 1})), trips(leg(start, line="R10")),
-                     trips(leg(start, situations=[line_code])), trips(leg(start, situations=[notice(affects=7)]))]
+        malformed = [
+            {},
+            {"data": None},
+            {"data": {"trip": {"tripPatterns": {}}}},
+            trips(leg(start, expectedStartTime="bad")),
+            trips(leg(start, expectedStartTime=iso(start)[:19])),
+            trips(leg(start, aimedStartTime=None)),
+            {"data": {"trip": {"tripPatterns": ["x"]}}},
+            {"data": {"trip": {"tripPatterns": [{"legs": ["x"]}]}}},
+            trips(leg(start, situations={"a": 1})),
+            trips(leg(start, line="R10")),
+            trips(leg(start, situations=[line_code])),
+            trips(leg(start, situations=[notice(affects=7)])),
+        ]
         for data in malformed:
             with self.subTest(data=data):
                 report = self.plan(data)
-                self.assertEqual((report["status"], report["errorCode"], report["error"]), ("error", "invalid_response", INVALID))
+                self.assertEqual(
+                    (report["status"], report["errorCode"], report["error"]), ("error", "invalid_response", INVALID)
+                )
                 self.assertEqual(report["route"], ROUTE)
         for errors in ([{"message": "bad"}], "bad", {"a": 1}):
             report = self.plan({"errors": errors, "data": {"trip": {"tripPatterns": []}}})
-            self.assertEqual((report["errorCode"], report["error"]), ("api_error", "Entur could not find departures. Try Refresh."))
+            self.assertEqual(
+                (report["errorCode"], report["error"]), ("api_error", "Entur could not find departures. Try Refresh.")
+            )
         self.assertEqual(self.plan({"errors": [], "data": {"trip": {"tripPatterns": []}}})["status"], "ok")
         self.assertEqual(self.plan(trips())["status"], "ok")
 
     def test_odd_but_valid_shapes_are_tolerated(self):
         start = base_time()
-        data = self.plan(trips(leg(start, serviceJourney={"id": 42}, line=None, situations=None, fromEstimatedCall=None),
-                               leg(start + 60, id="b", situations=[notice(affects="AffectedLine")])))
+        data = self.plan(
+            trips(
+                leg(start, serviceJourney={"id": 42}, line=None, situations=None, fromEstimatedCall=None),
+                leg(start + 60, id="b", situations=[notice(affects="AffectedLine")]),
+            )
+        )
         first, second = data["departures"]
-        self.assertEqual((first["id"], first["line"], first["platform"], first["realtime"]), (f"42:{start}", "—", "—", False))
+        self.assertEqual(
+            (first["id"], first["line"], first["platform"], first["realtime"]), (f"42:{start}", "—", "—", False)
+        )
         self.assertEqual(second["notices"][0]["scopeLabel"], "")
 
     def test_duplicate_and_expired_departures_removed(self):
@@ -178,10 +274,15 @@ class ParserTests(Case):
 
     def test_sorted_by_expected_then_aimed_and_capped(self):
         start = base_time()
-        legs = [on_time(start + 600, id="late"), leg(start, id="delayed", expectedStartTime=iso(start + 300)),
-                on_time(start + 300, id="early")] + [on_time(start + 900 + i * 60, id=f"x{i}") for i in range(5)]
+        legs = [
+            on_time(start + 600, id="late"),
+            leg(start, id="delayed", expectedStartTime=iso(start + 300)),
+            on_time(start + 300, id="early"),
+        ] + [on_time(start + 900 + i * 60, id=f"x{i}") for i in range(5)]
         data = self.plan(trips(*legs))
-        self.assertEqual([d["id"].split(":")[0] for d in data["departures"]], ["delayed", "early", "late", "x0", "x1", "x2"])
+        self.assertEqual(
+            [d["id"].split(":")[0] for d in data["departures"]], ["delayed", "early", "late", "x0", "x1", "x2"]
+        )
 
     def test_ten_thousand_notices_below_the_byte_cap_keep_three(self):
         # The marketplace review's shape: one valid rail leg, 10,000 unique situations.
@@ -200,14 +301,16 @@ class ParserTests(Case):
 
         def wide(identifier):
             return {"id": identifier, "summary": [{"value": "x"}], "affects": [{"__typename": "AffectedLine"}]}
+
         # The same five route-wide notices on every departure: all of them, none left out.
         same = [on_time(start + i * 60, id=f"t{i}", situations=[wide(f"w{n}") for n in range(5)]) for i in range(6)]
         report = self.plan(trips(*same))
         self.assertEqual([n["id"] for n in report["routeNotices"]], ["w0", "w1", "w2", "w3", "w4"])
         self.assertNotIn("noticesOmitted", report)
         # 1,500 distinct ones on each of six departures: the first five overall.
-        distinct = [on_time(start + i * 60, id=f"t{i}", situations=[wide(f"w{i}-{n}") for n in range(1500)])
-                    for i in range(6)]
+        distinct = [
+            on_time(start + i * 60, id=f"t{i}", situations=[wide(f"w{i}-{n}") for n in range(1500)]) for i in range(6)
+        ]
         data = trips(*distinct)
         self.assertLess(len(json.dumps(data)), 2_000_000)
         report = self.plan(data)
@@ -226,17 +329,34 @@ class ParserTests(Case):
     def test_oversized_notice_text_is_cut_with_an_ellipsis(self):
         long = "ø" * 20_000
         stops = [{"__typename": "AffectedStopPlace", "stopPlace": {"name": f"Stop {i}"}} for i in range(5000)]
-        situations = [notice(long, summary=[{"value": long}], description=[{"value": "d" + long}],
-                             advice=[{"value": "a" + long}]),
-                      notice("wide", affects=stops)]
-        data = trips(leg(base_time(), situations=situations, line={"publicCode": long}, serviceJourney={"id": long},
-                         fromEstimatedCall={"quay": {"publicCode": long}}))
+        situations = [
+            notice(
+                long, summary=[{"value": long}], description=[{"value": "d" + long}], advice=[{"value": "a" + long}]
+            ),
+            notice("wide", affects=stops),
+        ]
+        data = trips(
+            leg(
+                base_time(),
+                situations=situations,
+                line={"publicCode": long},
+                serviceJourney={"id": long},
+                fromEstimatedCall={"quay": {"publicCode": long}},
+            )
+        )
         self.assertLess(len(json.dumps(data)), 2_000_000)
         report = self.plan(data)
         d = report["departures"][0]
         n, scope = d["notices"][0], report["routeNotices"][0]["scopeLabel"]
-        for text, limit in ((n["id"], 100), (n["summary"], 200), (n["detail"], 600), (scope, 100), (d["id"], 100),
-                            (d["line"], 20), (d["platform"], 20)):
+        for text, limit in (
+            (n["id"], 100),
+            (n["summary"], 200),
+            (n["detail"], 600),
+            (scope, 100),
+            (d["id"], 100),
+            (d["line"], 20),
+            (d["platform"], 20),
+        ):
             self.assertEqual((len(text), text[-1]), (limit, "…"), text)
         self.assertTrue(scope.startswith("Stop 0 · Stop 1 · Stop 2"))
         self.assertTrue(n["detail"].startswith("d" + "ø" * 10))
@@ -251,9 +371,19 @@ class ParserTests(Case):
 class StorageTests(Case):
     def test_neutral_first_run(self):
         for args in ((), ("--force",), ("--offline",)):
-            self.assertEqual(self.helper.json(*args), {"status": "unconfigured", "route": None, "departures": [],
-                                                       "routeNotices": [], "updatedAt": 0, "stale": False,
-                                                       "error": "", "errorCode": ""})
+            self.assertEqual(
+                self.helper.json(*args),
+                {
+                    "status": "unconfigured",
+                    "route": None,
+                    "departures": [],
+                    "routeNotices": [],
+                    "updatedAt": 0,
+                    "stale": False,
+                    "error": "",
+                    "errorCode": "",
+                },
+            )
         self.assertEqual(self.entur.requests, [])
 
     def test_route_validation_sanitizes_station_labels(self):
@@ -266,20 +396,35 @@ class StorageTests(Case):
     def test_route_validation_rejects_invalid_pairs(self):
         select = "Select both stations from search results."
         name = "Invalid station name."
-        cases = [({}, select), ([], select), ({"from": ROUTE["from"], "to": ROUTE["from"]}, "Choose two different stations."),
-                 ({"from": {"id": "bad", "name": "Central"}, "to": ROUTE["to"]}, select),
-                 ({"from": {"id": "NSR:StopPlace:1x", "name": "Central"}, "to": ROUTE["to"]}, select),
-                 ({"from": ROUTE["from"], "to": {"id": 2, "name": "Airport"}}, select),
-                 ({"from": ROUTE["from"], "to": "NSR:StopPlace:2"}, select),
-                 ({"from": {"id": "NSR:StopPlace:1", "name": " \t "}, "to": ROUTE["to"]}, name),
-                 ({"from": {"id": "NSR:StopPlace:1", "name": "x" * 161}, "to": ROUTE["to"]}, name),
-                 ({"from": {"id": "NSR:StopPlace:1", "name": "Oslo\nS"}, "to": ROUTE["to"]}, name),
-                 ({"from": {"id": "NSR:StopPlace:1"}, "to": ROUTE["to"]}, name)]
+        cases = [
+            ({}, select),
+            ([], select),
+            ({"from": ROUTE["from"], "to": ROUTE["from"]}, "Choose two different stations."),
+            ({"from": {"id": "bad", "name": "Central"}, "to": ROUTE["to"]}, select),
+            ({"from": {"id": "NSR:StopPlace:1x", "name": "Central"}, "to": ROUTE["to"]}, select),
+            ({"from": ROUTE["from"], "to": {"id": 2, "name": "Airport"}}, select),
+            ({"from": ROUTE["from"], "to": "NSR:StopPlace:2"}, select),
+            ({"from": {"id": "NSR:StopPlace:1", "name": " \t "}, "to": ROUTE["to"]}, name),
+            ({"from": {"id": "NSR:StopPlace:1", "name": "x" * 161}, "to": ROUTE["to"]}, name),
+            ({"from": {"id": "NSR:StopPlace:1", "name": "Oslo\nS"}, "to": ROUTE["to"]}, name),
+            ({"from": {"id": "NSR:StopPlace:1"}, "to": ROUTE["to"]}, name),
+        ]
         for route, message in cases:
             with self.subTest(route=route):
                 report = self.fetch("--force", route=route)
-                self.assertEqual(report, {"status": "error", "route": None, "departures": [], "routeNotices": [],
-                                          "updatedAt": 0, "stale": False, "error": message, "errorCode": "invalid_route"})
+                self.assertEqual(
+                    report,
+                    {
+                        "status": "error",
+                        "route": None,
+                        "departures": [],
+                        "routeNotices": [],
+                        "updatedAt": 0,
+                        "stale": False,
+                        "error": message,
+                        "errorCode": "invalid_route",
+                    },
+                )
         longest = {"from": {"id": "NSR:StopPlace:1", "name": "ø" * 160}, "to": ROUTE["to"]}
         self.assertEqual(self.fetch("--offline", route=longest)["errorCode"], "offline")
         self.assertEqual(self.entur.requests, [])
@@ -295,15 +440,18 @@ class StorageTests(Case):
         self.helper.write_cache(aged)
         self.entur.plan(Reply({"error": "down"}, status=503))
         stale = self.fetch()
-        self.assertEqual(stale, dict(aged, status="stale", stale=True, error="Entur is unavailable. Try Refresh.",
-                                     errorCode="http_error"))
+        self.assertEqual(
+            stale,
+            dict(aged, status="stale", stale=True, error="Entur is unavailable. Try Refresh.", errorCode="http_error"),
+        )
         self.assertEqual(self.helper.read_cache(), aged)
         refused = self.refused()
         refused.write_cache(aged)
         report = refused.fetch("--force")
-        self.assertEqual((report["status"], report["errorCode"], report["error"], report["updatedAt"]),
-                         ("stale", "network_error", "Cannot reach Entur. Check your connection and try Refresh.",
-                          aged["updatedAt"]))
+        self.assertEqual(
+            (report["status"], report["errorCode"], report["error"], report["updatedAt"]),
+            ("stale", "network_error", "Cannot reach Entur. Check your connection and try Refresh.", aged["updatedAt"]),
+        )
 
     def test_cache_path_is_isolated_by_route_language_and_hours(self):
         reverse = {"from": ROUTE["to"], "to": ROUTE["from"]}
@@ -327,8 +475,18 @@ class StorageTests(Case):
 
     def test_fresh_cache_is_returned_as_stored(self):
         now = int(time.time())
-        stored = {"status": "ok", "route": ROUTE, "departures": [], "routeNotices": [], "updatedAt": now - 10,
-                  "stale": False, "error": "", "errorCode": "", "searchHours": 24, "extra": {"kept": ["ø"]}}
+        stored = {
+            "status": "ok",
+            "route": ROUTE,
+            "departures": [],
+            "routeNotices": [],
+            "updatedAt": now - 10,
+            "stale": False,
+            "error": "",
+            "errorCode": "",
+            "searchHours": 24,
+            "extra": {"kept": ["ø"]},
+        }
         path = self.helper.write_cache(stored)
         result = self.helper.run("--route-stdin", stdin=json.dumps(ROUTE))
         self.assertEqual((result.code, result.stderr, result.stdout), (0, b"", path.read_bytes()))
@@ -349,9 +507,19 @@ class StorageTests(Case):
 
     def test_offline_never_requests_network(self):
         report = self.fetch("--offline")
-        self.assertEqual(report, {"status": "error", "route": ROUTE, "departures": [], "routeNotices": [], "updatedAt": 0,
-                                  "stale": False, "error": "Offline. Showing the last available update.",
-                                  "errorCode": "offline"})
+        self.assertEqual(
+            report,
+            {
+                "status": "error",
+                "route": ROUTE,
+                "departures": [],
+                "routeNotices": [],
+                "updatedAt": 0,
+                "stale": False,
+                "error": "Offline. Showing the last available update.",
+                "errorCode": "offline",
+            },
+        )
         self.fetch("--force")
         stale = self.fetch("--offline")
         self.assertEqual((stale["status"], stale["stale"], stale["errorCode"]), ("stale", True, "offline"))
@@ -371,20 +539,51 @@ class StorageTests(Case):
 
     def test_invalid_snapshots_are_ignored(self):
         now = int(time.time())
-        good = {"status": "ok", "route": ROUTE, "departures": [], "routeNotices": [], "updatedAt": now - 10,
-                "stale": False, "error": "", "errorCode": ""}
-        departure = {"id": "a", "line": "R10", "platform": "1", "aimedTime": "10:00", "expectedTime": "10:00",
-                     "arrivalTime": "10:10", "aimed": now, "expected": now, "arrival": now, "delay": 0, "duration": 10,
-                     "realtime": True, "cancelled": False, "notices": []}
+        good = {
+            "status": "ok",
+            "route": ROUTE,
+            "departures": [],
+            "routeNotices": [],
+            "updatedAt": now - 10,
+            "stale": False,
+            "error": "",
+            "errorCode": "",
+        }
+        departure = {
+            "id": "a",
+            "line": "R10",
+            "platform": "1",
+            "aimedTime": "10:00",
+            "expectedTime": "10:00",
+            "arrivalTime": "10:10",
+            "aimed": now,
+            "expected": now,
+            "arrival": now,
+            "delay": 0,
+            "duration": 10,
+            "realtime": True,
+            "cancelled": False,
+            "notices": [],
+        }
         n = {"id": "n", "summary": "s", "detail": "", "scopeLabel": "", "kind": "info"}
         self.helper.write_cache(dict(good, departures=[dict(departure, notices=[n])], routeNotices=[n]))
         self.assertEqual(self.fetch("--offline")["status"], "stale")
-        invalid = [dict(good, status="stale"), dict(good, route=ROUTE["from"]), dict(good, updatedAt=float(now)),
-                   dict(good, updatedAt=True), dict(good, stale=0), dict(good, error=None), dict(good, departures={}),
-                   dict(good, departures=[dict(departure, delay=1.0)]), dict(good, departures=[dict(departure, realtime=1)]),
-                   dict(good, departures=[dict(departure, line=None)]), dict(good, departures=["x"]),
-                   dict(good, routeNotices=[dict(n, kind="error")]),
-                   dict(good, departures=[dict(departure, notices=[{"id": "n"}])]), dict(good, noticesOmitted=1)]
+        invalid = [
+            dict(good, status="stale"),
+            dict(good, route=ROUTE["from"]),
+            dict(good, updatedAt=float(now)),
+            dict(good, updatedAt=True),
+            dict(good, stale=0),
+            dict(good, error=None),
+            dict(good, departures={}),
+            dict(good, departures=[dict(departure, delay=1.0)]),
+            dict(good, departures=[dict(departure, realtime=1)]),
+            dict(good, departures=[dict(departure, line=None)]),
+            dict(good, departures=["x"]),
+            dict(good, routeNotices=[dict(n, kind="error")]),
+            dict(good, departures=[dict(departure, notices=[{"id": "n"}])]),
+            dict(good, noticesOmitted=1),
+        ]
         for snapshot in invalid:
             with self.subTest(snapshot=snapshot):
                 self.helper.write_cache(snapshot)
@@ -400,12 +599,34 @@ class StorageTests(Case):
             return {"id": identifier, "summary": text, "detail": text, "kind": "info", "scopeLabel": text}
 
         def departure(identifier, count):
-            return {"id": identifier, "line": "R10", "platform": "1" * 50, "aimedTime": "10:00", "expectedTime": "10:00",
-                    "arrivalTime": "10:10", "aimed": now, "expected": now, "arrival": now, "delay": 0, "duration": 10,
-                    "realtime": True, "cancelled": False, "notices": [n(f"n{i}", long if i == 0 else "s") for i in range(count)]}
-        old = {"status": "ok", "route": ROUTE, "departures": [departure(f"d{i}", 60) for i in range(10)],
-               "routeNotices": [n("r"), n("r"), *(n(f"r{i}") for i in range(10_000))], "updatedAt": now - 10,
-               "stale": False, "error": "", "errorCode": "", "searchHours": 24}
+            return {
+                "id": identifier,
+                "line": "R10",
+                "platform": "1" * 50,
+                "aimedTime": "10:00",
+                "expectedTime": "10:00",
+                "arrivalTime": "10:10",
+                "aimed": now,
+                "expected": now,
+                "arrival": now,
+                "delay": 0,
+                "duration": 10,
+                "realtime": True,
+                "cancelled": False,
+                "notices": [n(f"n{i}", long if i == 0 else "s") for i in range(count)],
+            }
+
+        old = {
+            "status": "ok",
+            "route": ROUTE,
+            "departures": [departure(f"d{i}", 60) for i in range(10)],
+            "routeNotices": [n("r"), n("r"), *(n(f"r{i}") for i in range(10_000))],
+            "updatedAt": now - 10,
+            "stale": False,
+            "error": "",
+            "errorCode": "",
+            "searchHours": 24,
+        }
         path = self.helper.write_cache(old)
         stored = path.read_bytes()
         self.assertLess(len(stored), 2_000_000)
@@ -420,8 +641,16 @@ class StorageTests(Case):
                 self.assertEqual((len(d["platform"]), len(d["notices"][0]["detail"])), (20, 600))
             self.assertEqual([x["id"] for x in report["routeNotices"]], ["r", "r0", "r1", "r2", "r3"])
             self.assertIs(report["noticesOmitted"], True)
-        self.assertEqual(stale, dict(fresh, status="stale", stale=True, error="Offline. Showing the last available update.",
-                                     errorCode="offline"))
+        self.assertEqual(
+            stale,
+            dict(
+                fresh,
+                status="stale",
+                stale=True,
+                error="Offline. Showing the last available update.",
+                errorCode="offline",
+            ),
+        )
         # Within the limits, a snapshot is still returned byte for byte.
         self.helper.write_cache(fresh)
         result = self.helper.run("--route-stdin", stdin=json.dumps(ROUTE))
@@ -432,14 +661,17 @@ class StorageTests(Case):
         self.helper.cache_dir.write_text("not a directory")
         self.entur.plan(busy(base_time()))
         report = self.fetch("--force")
-        self.assertEqual((report["status"], len(report["departures"]), report["error"], report["errorCode"]),
-                         ("ok", 6, "Could not save the local cache.", "cache_write"))
+        self.assertEqual(
+            (report["status"], len(report["departures"]), report["error"], report["errorCode"]),
+            ("ok", 6, "Could not save the local cache.", "cache_write"),
+        )
 
     def test_no_temporary_files_remain(self):
         self.fetch("--force")
         self.fetch("--force", "--language", "nb")
-        self.assertEqual(sorted(p.name for p in self.helper.cache_dir.iterdir()),
-                         sorted([cache_name(), cache_name(ROUTE, "nb")]))
+        self.assertEqual(
+            sorted(p.name for p in self.helper.cache_dir.iterdir()), sorted([cache_name(), cache_name(ROUTE, "nb")])
+        )
 
     def test_busy_route_needs_only_the_short_window(self):
         self.entur.plan(busy(base_time()))
@@ -485,8 +717,10 @@ class StorageTests(Case):
             with self.subTest(failure=failure.data):
                 self.entur.plan(trips(leg(base_time())), failure)
                 report = self.fetch("--force")
-                self.assertEqual((report["status"], len(report["departures"]), report["searchHours"], report["errorCode"]),
-                                 ("ok", 1, 3, ""))
+                self.assertEqual(
+                    (report["status"], len(report["departures"]), report["searchHours"], report["errorCode"]),
+                    ("ok", 1, 3, ""),
+                )
 
     def test_requests_share_one_budget_inside_the_widget_timeout(self):
         # 11 s for the short window leaves too little to widen: keep its answer instead of being killed.
@@ -547,12 +781,24 @@ class SearchTests(Case):
     def test_search_validates_and_deduplicates_stations(self):
         good = feature("NSR:StopPlace:12", "Central", "Central, City")
         names_text = {"properties": {"id": "NSR:StopPlace:17", "names": "Oslo", "stopPlaceTypes": ["railStation"]}}
-        types_text = {"properties": {"id": "NSR:StopPlace:18", "names": {"default": "Ås"}, "stopPlaceTypes": "railStation"}}
-        others = [good, {"properties": {"id": "not-an-id", "stopPlaceTypes": ["railStation"]}},
-                  feature("NSR:StopPlace:15", "Bus", types=("onstreetBus",)), feature("NSR:StopPlace:16", "x" * 161),
-                  names_text, {"properties": None}, types_text, "x", None]
-        self.assertEqual(self.search("Central", {"features": others})["stations"],
-                         [{"id": "NSR:StopPlace:12", "name": "Central", "label": "Central, City"}])
+        types_text = {
+            "properties": {"id": "NSR:StopPlace:18", "names": {"default": "Ås"}, "stopPlaceTypes": "railStation"}
+        }
+        others = [
+            good,
+            {"properties": {"id": "not-an-id", "stopPlaceTypes": ["railStation"]}},
+            feature("NSR:StopPlace:15", "Bus", types=("onstreetBus",)),
+            feature("NSR:StopPlace:16", "x" * 161),
+            names_text,
+            {"properties": None},
+            types_text,
+            "x",
+            None,
+        ]
+        self.assertEqual(
+            self.search("Central", {"features": others})["stations"],
+            [{"id": "NSR:StopPlace:12", "name": "Central", "label": "Central, City"}],
+        )
 
     def test_a_long_station_list_below_the_byte_cap_keeps_the_first_eight(self):
         features = [feature(f"NSR:StopPlace:{i // 2}", f"Station {i}") for i in range(10_000)]
@@ -567,8 +813,16 @@ class SearchTests(Case):
         self.assertEqual(found["stations"][0]["name"], "-x Junction")
 
     def test_search_failures(self):
-        invalid = {"status": "error", "route": None, "departures": [], "routeNotices": [], "updatedAt": 0, "stale": False,
-                   "error": "Station search returned an invalid response.", "errorCode": "invalid_response"}
+        invalid = {
+            "status": "error",
+            "route": None,
+            "departures": [],
+            "routeNotices": [],
+            "updatedAt": 0,
+            "stale": False,
+            "error": "Station search returned an invalid response.",
+            "errorCode": "invalid_response",
+        }
         self.assertEqual(self.search("Oslo", {"features": {}}), invalid)
         self.assertEqual(self.search("Oslo", Reply({}, status=502))["errorCode"], "http_error")
         self.assertEqual(self.search("Oslo", Reply(raw=b"<html>"))["errorCode"], "invalid_response")
@@ -588,9 +842,14 @@ class NetworkTests(Case):
         self.assertEqual(request["query"], "")
 
     def test_failures_map_to_codes(self):
-        cases = [(Reply({}, status=500), "http_error"), (Reply({}, status=404), "http_error"),
-                 (Reply(raw=b"not json"), "invalid_response"), (Reply([]), "invalid_response"),
-                 (Reply(raw=b'{"a": 1} x'), "invalid_response"), (Reply(raw=b'{"a": "\xff"}'), "invalid_response")]
+        cases = [
+            (Reply({}, status=500), "http_error"),
+            (Reply({}, status=404), "http_error"),
+            (Reply(raw=b"not json"), "invalid_response"),
+            (Reply([]), "invalid_response"),
+            (Reply(raw=b'{"a": 1} x'), "invalid_response"),
+            (Reply(raw=b'{"a": "\xff"}'), "invalid_response"),
+        ]
         for reply, code in cases:
             with self.subTest(code=code, data=reply.data[:20]):
                 self.assertEqual(self.plan(reply)["errorCode"], code)
@@ -599,13 +858,15 @@ class NetworkTests(Case):
         def sized(size):
             head = b'{"data": {"trip": {"tripPatterns": []}}, "pad": "'
             return head + b"x" * (size - len(head) - 2) + b'"}'
+
         self.assertEqual(self.plan(Reply(raw=sized(2_000_000)))["status"], "ok")
         self.assertEqual(self.plan(Reply(raw=sized(2_000_001)))["errorCode"], "invalid_response")
 
     def test_redirect_is_followed_for_search(self):
         moved = GEOCODER_PATH + "?q=moved&limit=8&stopPlaceTypes=railStation"
-        self.entur.stations(Reply({}, status=302, headers={"Location": moved}),
-                            {"features": [feature("NSR:StopPlace:3", "Moved")]})
+        self.entur.stations(
+            Reply({}, status=302, headers={"Location": moved}), {"features": [feature("NSR:StopPlace:3", "Moved")]}
+        )
         self.assertEqual(self.helper.json("--search=Oslo")["stations"][0]["name"], "Moved")
         self.assertEqual([r["query"].split("&")[0] for r in self.entur.taken(GEOCODER_PATH)], ["q=Oslo", "q=moved"])
 

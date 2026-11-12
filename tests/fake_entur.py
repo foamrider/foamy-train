@@ -19,6 +19,7 @@ machine's bin/<arch>/foamy-train-helper), e.g. the aarch64 build through qemu
 binfmt:
   FOAMY_HELPER='["bin/aarch64/foamy-train-helper"]' python3 -m unittest discover -s tests -p 'test_*.py'
 """
+
 import base64
 import hashlib
 import json
@@ -52,18 +53,40 @@ NOTICE_FIELDS = """id reportType summary { language value } description { langua
  ... on AffectedStopPlaceOnLine { line { publicCode } stopPlace { name } }
  }"""
 # The GraphQL document the helper must send, byte for byte.
-QUERY = """query Departures($from: String!, $to: String!, $searchWindow: Int!) {
+QUERY = (
+    """query Departures($from: String!, $to: String!, $searchWindow: Int!) {
  trip(from: {place: $from}, to: {place: $to}, numTripPatterns: 12, searchWindow: $searchWindow,
  maximumTransfers: 1, includeRealtimeCancellations: true, includePlannedCancellations: true,
  modes: {transportModes: [{transportMode: rail}]}) {
  tripPatterns { legs { id mode aimedStartTime expectedStartTime aimedEndTime expectedEndTime realtime
  line { publicCode } serviceJourney { id }
- fromEstimatedCall { cancellation realtime quay { publicCode } situations { """ + NOTICE_FIELDS + """ } }
- toEstimatedCall { cancellation situations { """ + NOTICE_FIELDS + """ } }
- situations { """ + NOTICE_FIELDS + """ }
+ fromEstimatedCall { cancellation realtime quay { publicCode } situations { """
+    + NOTICE_FIELDS
+    + """ } }
+ toEstimatedCall { cancellation situations { """
+    + NOTICE_FIELDS
+    + """ } }
+ situations { """
+    + NOTICE_FIELDS
+    + """ }
  } } } }"""
-DEPARTURE_KEYS = ["id", "line", "aimed", "expected", "arrival", "aimedTime", "expectedTime", "arrivalTime",
-                  "delay", "duration", "platform", "realtime", "cancelled", "notices"]
+)
+DEPARTURE_KEYS = [
+    "id",
+    "line",
+    "aimed",
+    "expected",
+    "arrival",
+    "aimedTime",
+    "expectedTime",
+    "arrivalTime",
+    "delay",
+    "duration",
+    "platform",
+    "realtime",
+    "cancelled",
+    "notices",
+]
 REPORT_KEYS = ["status", "route", "departures", "routeNotices", "updatedAt", "stale", "error", "errorCode"]
 
 
@@ -87,6 +110,7 @@ HELPER = helper_prefix()
 
 # --- fixtures ------------------------------------------------------------------
 
+
 def iso(epoch):
     return datetime.fromtimestamp(epoch, OSLO).isoformat()
 
@@ -102,10 +126,18 @@ def base_time(minutes=8):
 
 def leg(start, **changes):
     """A direct rail leg: aimed at `start`, 3 minutes late, 10 minutes long."""
-    value = {"id": "train-1", "mode": "rail", "aimedStartTime": iso(start), "expectedStartTime": iso(start + 180),
-             "aimedEndTime": iso(start + 600), "expectedEndTime": iso(start + 780), "line": {"publicCode": "R10"},
-             "fromEstimatedCall": {"cancellation": False, "realtime": True, "quay": {"publicCode": "11"}},
-             "toEstimatedCall": {"cancellation": False}, "situations": []}
+    value = {
+        "id": "train-1",
+        "mode": "rail",
+        "aimedStartTime": iso(start),
+        "expectedStartTime": iso(start + 180),
+        "aimedEndTime": iso(start + 600),
+        "expectedEndTime": iso(start + 780),
+        "line": {"publicCode": "R10"},
+        "fromEstimatedCall": {"cancellation": False, "realtime": True, "quay": {"publicCode": "11"}},
+        "toEstimatedCall": {"cancellation": False},
+        "situations": [],
+    }
     value.update(changes)
     return value
 
@@ -123,10 +155,13 @@ def busy(start, count=7):
 
 
 def notice(identifier="n1", **changes):
-    value = {"id": identifier, "reportType": "incident",
-             "summary": [{"language": "en", "value": "Signal fault"}, {"language": "nb", "value": "Signalfeil"}],
-             "description": [{"language": "en", "value": "Allow more time."}],
-             "affects": [{"__typename": "AffectedServiceJourney"}]}
+    value = {
+        "id": identifier,
+        "reportType": "incident",
+        "summary": [{"language": "en", "value": "Signal fault"}, {"language": "nb", "value": "Signalfeil"}],
+        "description": [{"language": "en", "value": "Allow more time."}],
+        "affects": [{"__typename": "AffectedServiceJourney"}],
+    }
     value.update(changes)
     return value
 
@@ -149,6 +184,7 @@ def python_json(value):
 
 
 # --- fake Entur ------------------------------------------------------------------
+
 
 class Reply:
     def __init__(self, body=None, status=200, delay=0.0, raw=None, headers=None):
@@ -173,8 +209,15 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else b""
         path, _, query = self.path.partition("?")
-        fake.record({"method": self.command, "path": path, "query": query, "body": body,
-                     "headers": {k.lower(): v for k, v in self.headers.items()}})
+        fake.record(
+            {
+                "method": self.command,
+                "path": path,
+                "query": query,
+                "body": body,
+                "headers": {k.lower(): v for k, v in self.headers.items()},
+            }
+        )
         reply = fake.next_reply(path)
         if reply.delay and fake.closing.wait(reply.delay):
             return
@@ -333,17 +376,48 @@ class CertAuthority:
         self.dir = Path(directory)
         self.ca, self.cert, self.key = self.dir / "ca.pem", self.dir / "server.pem", self.dir / "server.key"
         extensions = self.dir / "server.ext"
-        extensions.write_text("subjectAltName=DNS:localhost,DNS:api.entur.io,IP:127.0.0.1\n"
-                              "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n"
-                              "extendedKeyUsage=serverAuth\nsubjectKeyIdentifier=hash\n"
-                              "authorityKeyIdentifier=keyid:always\n")
+        extensions.write_text(
+            "subjectAltName=DNS:localhost,DNS:api.entur.io,IP:127.0.0.1\n"
+            "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n"
+            "extendedKeyUsage=serverAuth\nsubjectKeyIdentifier=hash\n"
+            "authorityKeyIdentifier=keyid:always\n"
+        )
         ec = ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes"]
-        self.openssl("req", "-x509", *ec, "-keyout", self.dir / "ca.key", "-out", self.ca, "-days", "30",
-                     "-subj", "/CN=foamy-train test CA", "-addext", "basicConstraints=critical,CA:TRUE",
-                     "-addext", "keyUsage=critical,keyCertSign,cRLSign")
+        self.openssl(
+            "req",
+            "-x509",
+            *ec,
+            "-keyout",
+            self.dir / "ca.key",
+            "-out",
+            self.ca,
+            "-days",
+            "30",
+            "-subj",
+            "/CN=foamy-train test CA",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
+        )
         self.openssl("req", *ec, "-keyout", self.key, "-out", self.dir / "server.csr", "-subj", "/CN=localhost")
-        self.openssl("x509", "-req", "-in", self.dir / "server.csr", "-CA", self.ca, "-CAkey", self.dir / "ca.key",
-                     "-CAcreateserial", "-out", self.cert, "-days", "30", "-extfile", extensions)
+        self.openssl(
+            "x509",
+            "-req",
+            "-in",
+            self.dir / "server.csr",
+            "-CA",
+            self.ca,
+            "-CAkey",
+            self.dir / "ca.key",
+            "-CAcreateserial",
+            "-out",
+            self.cert,
+            "-days",
+            "30",
+            "-extfile",
+            extensions,
+        )
 
     def openssl(self, *args):
         subprocess.run(["openssl", *map(str, args)], check=True, capture_output=True, timeout=30)
@@ -355,6 +429,7 @@ class CertAuthority:
 
 
 # --- the helper as a process ------------------------------------------------------
+
 
 class Result:
     def __init__(self, completed):
@@ -375,9 +450,16 @@ class Helper:
         self.home.mkdir()
         empty = self.root / "bin"
         empty.mkdir()
-        self.env = {"HOME": str(self.home), "PATH": str(empty), "LANG": "C.UTF-8", "TZ": "America/New_York",
-                    "XDG_CACHE_HOME": str(self.cache), "XDG_CONFIG_HOME": str(self.root / "config"),
-                    "XDG_STATE_HOME": str(self.root / "state"), ENDPOINT_ENV: endpoint}
+        self.env = {
+            "HOME": str(self.home),
+            "PATH": str(empty),
+            "LANG": "C.UTF-8",
+            "TZ": "America/New_York",
+            "XDG_CACHE_HOME": str(self.cache),
+            "XDG_CONFIG_HOME": str(self.root / "config"),
+            "XDG_STATE_HOME": str(self.root / "state"),
+            ENDPOINT_ENV: endpoint,
+        }
 
     def run(self, *args, stdin=b"", env=None, timeout=30):
         environment = dict(self.env)
@@ -388,8 +470,9 @@ class Helper:
                 environment[key] = value
         if isinstance(stdin, str):
             stdin = stdin.encode()
-        completed = subprocess.run([*HELPER, *args], input=stdin, env=environment, capture_output=True,
-                                   timeout=timeout, cwd=self.root)
+        completed = subprocess.run(
+            [*HELPER, *args], input=stdin, env=environment, capture_output=True, timeout=timeout, cwd=self.root
+        )
         return Result(completed)
 
     def json(self, *args, **kwargs):

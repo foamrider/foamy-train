@@ -62,8 +62,9 @@ Departures come from Entur's journey planner. To keep requests light:
   when that finds fewer than six direct trains (sparse routes, late evening).
 - Nothing is fetched while the screen is locked. Before each unattended
   check the widget asks the lock screen through the public `lock isLocked`
-  IPC target (answered by Omarchy's lock and by Foamy Lock); opening the
-  popup or pressing Refresh always fetches.
+  IPC target in-process (answered by Omarchy's lock and by Foamy Lock; with
+  neither running, the session counts as unlocked); opening the popup or
+  pressing Refresh always fetches.
 - One request runs per shell, however many monitors show the bar.
 - Each check runs the helper once; it prints one reply and exits, so nothing
   stays running between checks. A reply younger than 30 seconds is served
@@ -197,14 +198,18 @@ Tests (Python 3, node and the openssl CLI are needed for development only).
 The Python tests run the helper as a process against a local fake Entur
 (`tests/fake_entur.py`); `FOAMY_TRAIN_ENTUR_URL`, a loopback base URL, is the
 helper's test-only endpoint override, and `FOAMY_HELPER` (a JSON argv prefix)
-picks the binary:
+picks the binary. `tests/validate.sh` runs every check and linter and then
+`tests/suite.sh`, which runs the tests below (`--ci`: node and the helper
+tests only; `--fast`: no offscreen runtime tests):
 
 ```sh
+mise install                             # once: the pinned tools
+tests/validate.sh                        # everything (--ci, --fast)
 node --test tests/*.test.cjs
 python3 -m unittest discover -s tests -p 'test_*.py'
 FOAMY_HELPER='["bin/aarch64/foamy-train-helper"]' python3 -m unittest discover -s tests -p 'test_*.py'  # via qemu binfmt
 bash tests/kit-check.sh
-python3 tests/i18n-runtime.py            # live language switching (OMARCHY_PATH picks another tree)
+python3 "$FOAMY_KIT/preview/i18n_runtime.py" .   # the catalogs under a live language switch
 python3 tests/runtime.py                 # offscreen, needs foamy-kit (FOAMY_KIT)
 python3 tests/cursor.py                  # popup cursor vs the 1 s clock (offscreen)
 FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5
@@ -212,5 +217,4 @@ FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5 
 ```
 
 The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
-(`FOAMY_HOST_45` picks another 4.5 tree). They also run on 4.0 when
-`FOAMY_HOST_40` names a 4.0 shell tree; otherwise they print a SKIP line for it.
+(`FOAMY_HOST_45` picks another 4.5 tree).

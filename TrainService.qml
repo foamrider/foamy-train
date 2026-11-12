@@ -7,7 +7,7 @@ import "kit"
 import "kit/FoamyIpcResolver.js" as IpcResolver
 import "kit/FoamyNative.js" as FoamyNative
 import "Model.js" as Model
-import "Schedule.js" as Schedule
+import "kit/FoamySchedule.js" as Schedule
 
 // The one Entur client per shell. 4.5 draws a bar per monitor, and a qmldir
 // singleton is shared by every bar instance of this plugin, so the clock, the
@@ -19,8 +19,9 @@ import "Schedule.js" as Schedule
 // popup is open or the next train is within 30 minutes, 5 minutes when it is
 // within 2 hours, 15 minutes otherwise. Nothing is fetched while the session
 // is locked: before each unattended poll the public `lock isLocked` IPC target
-// is asked (in-process through 4.5's IpcRegistry, else `omarchy-shell`), which
-// both the stock lock and foamy-lock answer with "true" or "false".
+// is asked in-process through the shell's IpcRegistry, where both the stock
+// lock and foamy-lock answer "true" or "false". When no lock target answers,
+// the session counts as unlocked.
 QtObject {
   id: root
 
@@ -65,6 +66,10 @@ QtObject {
     atomicWrites: true
     printErrors: false
     onLoaded: root.scheduleOverride = Schedule.parseOverride(text(), Date.now())
+    // The snooze still applies in memory, but a restart forgets it.
+    onSaveFailed: function (error) {
+      console.warn("foamy-train: couldn't save the snooze state to " + path + " (" + FileViewError.toString(error) + "); it lasts until the shell restarts")
+    }
   }
   function toggleSnooze() {
     var now = new Date()
@@ -74,8 +79,7 @@ QtObject {
   }
 
   // --- network -------------------------------------------------------------------
-  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full
-    || Networking.connectivity === NetworkConnectivity.Limited
+  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full || Networking.connectivity === NetworkConnectivity.Limited
   property bool networkSettled: false
   readonly property bool networkReady: networkConnected && networkSettled
   // Every (re)connection waits out the settle delay, not just the first.
@@ -106,24 +110,28 @@ QtObject {
 
   // --- session lock ----------------------------------------------------------------
   property bool sessionLocked: false
+  // The last probe reached a lock target (false: none answers, so unlocked).
   property bool lockInProcess: false
-  property bool lockProbeAvailable: true
-  property int lockProbeFailures: 0
-  property bool lockForce: false
-  // generation when the omarchy-shell probe started; a newer one (route,
-  // schedule, network or membership change) discards the probe's fetch.
-  property int lockGeneration: 0
-  readonly property int lockProbeSeconds: lockInProcess ? 10 : 60
+  // While locked, only this cheap in-process probe ticks.
+  readonly property int lockProbeSeconds: 10
 
   readonly property int pollInterval: Model.pollInterval(refreshSeconds, {
-    open: demanded, locked: sessionLocked, lockSeconds: lockProbeSeconds, report: report, now: nowEpoch
+    open: demanded,
+    locked: sessionLocked,
+    lockSeconds: lockProbeSeconds,
+    report: report,
+    now: nowEpoch
   })
   readonly property bool stale: Model.stale(report, nowEpoch, !networkReady, Math.max(pollInterval, fetchInterval))
   readonly property var departures: Model.upcoming(report, nowEpoch, stale)
   readonly property var next: Model.next(departures)
-  readonly property bool alert: withinSchedule && !stale && (departures.some(function(d) {
-    return d.cancelled || d.delay > 0 || d.notices.some(function(n) { return n.kind === "warning" })
-  }) || report.routeNotices.some(function(n) { return n.kind === "warning" }))
+  readonly property bool alert: withinSchedule && !stale && (departures.some(function (d) {
+      return d.cancelled || d.delay > 0 || d.notices.some(function (n) {
+        return n.kind === "warning"
+      })
+    }) || report.routeNotices.some(function (n) {
+      return n.kind === "warning"
+    }))
   readonly property bool canPoll: active && configured && !!route && networkReady && live && !helperUnavailable
 
   function configure(config) {
@@ -136,7 +144,8 @@ QtObject {
     language = config.language
     configuredRoute = config.routeJson
     configured = true
-    if (reset) syncRoute()
+    if (reset)
+      syncRoute()
     else if (relabel) {
       generation++
       refresh(true, false)
@@ -153,12 +162,17 @@ QtObject {
     pendingForce = false
     try {
       var parsed = Model.route(JSON.parse(configuredRoute))
-      report = Object.assign(Model.blank(parsed ? "ready" : "unconfigured"), { route: parsed })
+      report = Object.assign(Model.blank(parsed ? "ready" : "unconfigured"), {
+        route: parsed
+      })
     } catch (error) {
-      report = Object.assign(Model.blank("error"), { error: error.message })
+      report = Object.assign(Model.blank("error"), {
+        error: error.message
+      })
     }
     route = report.route
-    if (route) refresh(true, false)
+    if (route)
+      refresh(true, false)
   }
 
   function resetNetworkRetry() {
@@ -167,7 +181,8 @@ QtObject {
   }
 
   function retryNetworkRequest() {
-    if (!networkReady || sessionLocked || !live || helperUnavailable || networkRetries >= 3) return
+    if (!networkReady || sessionLocked || !live || helperUnavailable || networkRetries >= 3)
+      return
     // Bound startup recovery without overlapping the serialized worker.
     networkRetry.interval = 2500 * Math.pow(2, networkRetries++)
     networkRetry.restart()
@@ -182,78 +197,48 @@ QtObject {
   }
 
   function refresh(force, present) {
-    if (!canFetch()) return
-    if (statusProcess.running || lockProbing) {
+    if (!canFetch())
+      return
+    if (statusProcess.running) {
       pendingRefresh = true
       pendingForce = pendingForce || force
       return
     }
-    if (present || demanded) {
+    if (present || demanded)
       sessionLocked = false
-    } else if (lockProbeAvailable) {
-      var locked = lockedInProcess()
-      if (locked === null) {
-        lockForce = force
-        lockGeneration = generation
-        startLockProbe()
-        return
-      }
-      if (lockAnswered(locked)) return
-    }
+    else if (lockAnswered(lockedInProcess()))
+      return
     fetch(force)
   }
 
-  // true/false from the shell's own IpcRegistry (4.5), or null when it can't tell.
+  // The lock target's answer through the shell's own IpcRegistry; false
+  // when no lock target answers.
   function lockedInProcess() {
     var answer = IpcResolver.call(root, "lock", "isLocked", [])
-    if (!answer.ran) return null
-    lockInProcess = true
-    return String(answer.output).trim() === "true"
+    lockInProcess = answer.ran
+    return answer.ran && String(answer.output).trim() === "true"
   }
 
   // Records the lock state; true when the poll must wait.
   function lockAnswered(locked) {
     sessionLocked = locked
-    if (!locked) return false
+    if (!locked)
+      return false
     resetNetworkRetry()
     lastAttempt = Date.now() / 1000
     schedule()
     return true
   }
 
-  // The omarchy-shell probe finished. Polling may have been switched off
-  // meanwhile (schedule ended, last bar gone, route replaced): fetch only if
-  // nothing changed and fetching is still allowed.
-  function lockProbeDone(code, output) {
-    var answer = String(output || "").trim()
-    var locked = false
-    if (code === 0 && (answer === "true" || answer === "false")) {
-      lockProbeFailures = 0
-      locked = lockAnswered(answer === "true")
-    } else {
-      lockProbeFailed()
-    }
-    if (!locked && lockGeneration === generation && canFetch()) fetch(lockForce)
-    Qt.callLater(root.drainRefresh)
-  }
-
-  function lockProbeFailed() {
-    // No lock service answers: stop asking after a few tries and poll as usual.
-    if (++lockProbeFailures >= 3) lockProbeAvailable = false
-    sessionLocked = false
-  }
-
   function fetch(force) {
-    if (!canFetch()) return
+    if (!canFetch())
+      return
     requestedGeneration = generation
     requestOffline = !networkReady
     lastAttempt = Date.now() / 1000
     fetchInterval = pollInterval
     statusProcess.requestInput = JSON.stringify(route) + "\n"
-    statusProcess.command = deadline.concat(FoamyNative.command(pluginDir, "foamy-train-helper",
-      ["--language", language === "no" || language === "nb" ? "nb" : "en",
-       "--hours", String(lookAheadHours), "--route-stdin"]
-      .concat(force ? ["--force"] : []).concat(requestOffline ? ["--offline"] : [])))
+    statusProcess.command = deadline.concat(FoamyNative.command(pluginDir, "foamy-train-helper", ["--language", language === "no" || language === "nb" ? "nb" : "en", "--hours", String(lookAheadHours), "--route-stdin"].concat(force ? ["--force"] : []).concat(requestOffline ? ["--offline"] : [])))
     statusProcess.stdinEnabled = true
     inFlight = true
     statusProcess.running = true
@@ -264,10 +249,12 @@ QtObject {
   // no exited(), only running -> false). The running -> false that follows
   // exited() finds nothing in flight. Queued refreshes drain either way.
   function finishFetch(code, started) {
-    if (!inFlight) return
+    if (!inFlight)
+      return
     inFlight = false
     try {
-      if (requestedGeneration !== generation) return
+      if (requestedGeneration !== generation)
+        return
       if (started && FoamyNative.unavailable(code)) {
         helperFailed()
         return
@@ -278,8 +265,10 @@ QtObject {
         return
       }
       report = Model.parse(statusOutput.text)
-      if (["network_error", "http_error"].indexOf(report.errorCode) >= 0) retryNetworkRequest()
-      else resetNetworkRetry()
+      if (["network_error", "http_error"].indexOf(report.errorCode) >= 0)
+        retryNetworkRequest()
+      else
+        resetNetworkRetry()
     } catch (e) {
       fail("Invalid train response.")
     } finally {
@@ -315,7 +304,8 @@ QtObject {
   }
 
   function drainRefresh() {
-    if (!pendingRefresh) return
+    if (!pendingRefresh)
+      return
     var force = pendingForce
     pendingRefresh = false
     pendingForce = false
@@ -324,9 +314,15 @@ QtObject {
 
   function statusObject() {
     return {
-      status: report.status, departures: departures.length, stale: stale, locked: sessionLocked,
-      lockProbe: !lockProbeAvailable ? "off" : lockInProcess ? "in-process" : "omarchy-shell",
-      pollSeconds: pollInterval, withinSchedule: withinSchedule, snoozed: snoozed, networkReady: networkReady
+      status: report.status,
+      departures: departures.length,
+      stale: stale,
+      locked: sessionLocked,
+      lockProbe: lockInProcess ? "in-process" : "none",
+      pollSeconds: pollInterval,
+      withinSchedule: withinSchedule,
+      snoozed: snoozed,
+      networkReady: networkReady
     }
   }
 
@@ -357,7 +353,8 @@ QtObject {
     pendingForce = false
     statusProcess.running = false
   }
-  onSessionLockedChanged: if (!sessionLocked) resetNetworkRetry()
+  onSessionLockedChanged: if (!sessionLocked)
+    resetNetworkRetry()
 
   property Timer pollTimer: Timer {
     repeat: false
@@ -367,18 +364,6 @@ QtObject {
     onTriggered: root.refresh(true, false)
   }
 
-  // Fallback lock probe (4.0, or a lock handler outside IpcRegistry):
-  // FoamyPeerIpc runs a bounded `omarchy-shell lock isLocked`.
-  property bool lockProbing: false
-  property FoamyPeerIpc peer: FoamyPeerIpc {}
-  function startLockProbe() {
-    lockProbing = true
-    peer.call("lock", "isLocked", [], function(ok, output) {
-      root.lockProbing = false
-      root.lockProbeDone(ok ? 0 : 1, output)
-    })
-  }
-
   property Process statusProcess: Process {
     objectName: "departureProcess"
     property string requestInput: ""
@@ -386,8 +371,14 @@ QtObject {
       write(requestInput)
       stdinEnabled = false
     }
-    stdout: StdioCollector { id: statusOutput; waitForEnd: true }
-    onExited: function(code) { root.finishFetch(code, true) }
-    onRunningChanged: if (!running) root.finishFetch(-1, false)
+    stdout: StdioCollector {
+      id: statusOutput
+      waitForEnd: true
+    }
+    onExited: function (code) {
+      root.finishFetch(code, true)
+    }
+    onRunningChanged: if (!running)
+      root.finishFetch(-1, false)
   }
 }

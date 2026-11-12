@@ -1,0 +1,4 @@
+# oxlint findings accepted when the check was adopted. tests/validate.sh fails on any
+# finding not listed here. Regenerate with `tests/validate.sh --update-baseline oxlint`
+# only to drop fixed entries or after reviewing every added one; never to pass a check.
+Model.js: eslint(no-unused-vars): Variable 'c' is declared but never used. | function codePoints(text) { var n = 0; for (var c of text) n++; return n }

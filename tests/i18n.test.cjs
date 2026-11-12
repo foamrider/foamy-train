@@ -39,7 +39,7 @@ const tls = fs.readFileSync(path.join(root, 'kit', 'rust', 'foamy-helper', 'src'
 const unsupported = tls.match(/pub const UNSUPPORTED: &str = "((?:[^"\\]|\\.)*)";/);
 assert.ok(unsupported, 'kit tls::UNSUPPORTED');
 assert.ok(Object.hasOwn(en, unsupported[1]), `helper error key (kit tls::UNSUPPORTED): ${unsupported[1]}`);
-for (const key of Object.keys(en).filter(k => /^HTTPS isn't supported on this CPU/.test(k))) {
+for (const key of Object.keys(en).filter(k => k.startsWith("HTTPS isn't supported on this CPU"))) {
   assert.equal(key, unsupported[1], 'HTTPS-unsupported key matches the kit\'s tls::UNSUPPORTED');
 }
 

@@ -1,6 +1,11 @@
 const test=require('node:test');
 function loadPrefs(){const fs=require('node:fs'),vm=require('node:vm');const module={exports:{}};vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../kit/FoamyPrefs.js'),'utf8').replace(/^\.pragma library\s*$/m,''),{module,console});return module.exports}const assert=require('node:assert/strict');
-const Model=require('../Model.js'),Schedule=require('../Schedule.js'),Schema=require('../Preferences.js'),Prefs=loadPrefs();
+const Model=require('../Model.js'),Schema=require('../Preferences.js'),Prefs=loadPrefs();
+// The kit's FoamySchedule, which the service and the panel import. Its
+// objects come from the loader's vm realm, so results are compared as plain data.
+const KitSchedule=require('../kit/node-loader.cjs').load('FoamySchedule');
+const plain=v=>v===null||v===undefined?v:JSON.parse(JSON.stringify(v));
+const Schedule=Object.fromEntries(Object.entries(KitSchedule).map(([k,f])=>[k,typeof f==='function'?(...a)=>plain(f(...a)):f]));
 const Preferences={valid:(k,v)=>Prefs.valid(Schema.fields,k,v),value:(s,k)=>Prefs.value(Schema.fields,s,k)};
 test('schedule supports overnight carry and explicit days off',()=>{
  const week=['22:00-02:00','','','','','',''];

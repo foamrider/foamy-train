@@ -10,10 +10,9 @@ Item {
   id: preview
   required property QtObject bar
   required property Item anchorItem
-  property var previewStates: ["departures", "delayed", "incidents", "route", "cancelled", "offline", "error", "unconfigured",
-    "schedule", "loading", "cursor", "menu", "menu-outside", "settings", "settings-schedule", "settings-error"]
+  property var previewStates: ["departures", "delayed", "incidents", "route", "cancelled", "offline", "error", "unconfigured", "schedule", "loading", "cursor", "menu", "menu-outside", "settings", "settings-schedule", "settings-error"]
   property string previewState: "departures"
-  readonly property Item popup: popup
+  readonly property var popup: previewPopup
 
   readonly property string fixture: previewState === "cursor" ? "incidents" : previewState
   readonly property var report: Fixtures.report(fixture)
@@ -21,7 +20,7 @@ Item {
   readonly property var departures: Model.upcoming(report, Fixtures.now, stale)
 
   FoamyPopup {
-    id: popup
+    id: previewPopup
     anchorItem: preview.anchorItem
     bar: preview.bar
     open: true
@@ -40,24 +39,32 @@ Item {
         settingsError: preview.previewState === "settings-error" ? "Couldn't save the setting." : ""
         retryable: preview.previewState === "settings-error"
         settings: ({
-          route: Fixtures.route,
-          scheduleEnabled: preview.previewState === "settings-schedule",
-          scheduleMonday: "06:00-18:00", scheduleTuesday: "06:00-18:00", scheduleWednesday: "06:00-18:00",
-          scheduleThursday: "22:00-02:00", scheduleFriday: "06:00-18:00"
-        })
+            route: Fixtures.route,
+            scheduleEnabled: preview.previewState === "settings-schedule",
+            scheduleMonday: "06:00-18:00",
+            scheduleTuesday: "06:00-18:00",
+            scheduleWednesday: "06:00-18:00",
+            scheduleThursday: "22:00-02:00",
+            scheduleFriday: "06:00-18:00"
+          })
         Connections {
           target: preview
-          function onPreviewStateChanged() { body.applyCursorState() }
+          function onPreviewStateChanged() {
+            body.applyCursorState()
+          }
         }
         function applyCursorState() {
           if (preview.previewState === "cursor") {
             // Keyboard cursor on the first notice, expanded.
-            moveRequested(0, 1); moveRequested(0, 1); moveRequested(0, 1)
+            moveRequested(0, 1)
+            moveRequested(0, 1)
+            moveRequested(0, 1)
             activateRequested()
           }
           // The ⋯ menu (Snooze, Settings), opened from the keyboard.
           if (preview.previewState.indexOf("menu") === 0) {
-            moveRequested(0, 1); moveRequested(0, 1)
+            moveRequested(0, 1)
+            moveRequested(0, 1)
             activateRequested()
           }
         }

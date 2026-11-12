@@ -12,9 +12,9 @@ How the lists are made:
 
 ## `foamy-train-helper`
 
-- `bin/aarch64/foamy-train-helper`: sha256 `a28afe104364a014b862fa33ed03b44c04c3aa935c6957f0057fcc10fe4d219e`
-- `bin/x86_64/foamy-train-helper`: sha256 `5b6a461cedc0cef4d3870da16aae4069c8160f74d339158e0fdbedc33d4e9226`
-- `native/native.pin`: source `6661e0a1fd8d9fb27962af85c7d66936d713209e5d7135b73baee64c9189cc3d`, toolchain 1.99.1
+- `bin/aarch64/foamy-train-helper`: sha256 `5632e4d96c85d318b0a450310df76511d36e3a081b6fb3e9a6aa89509c23c199`
+- `bin/x86_64/foamy-train-helper`: sha256 `a8e511308b9827266bc61388e5e9bbe3d166f3e163138e1983a7cadc7a822779`
+- `native/native.pin`: source `ffc0861705c68573355a46efc859858b687b229dc79c69e4f641e73c0ca1a50e`, toolchain 1.99.1
 
 ### Crates linked into `foamy-train-helper`
 
@@ -63,7 +63,7 @@ First-party crates (not third-party code, listed for completeness):
 
 | Crate | Version | Source | License | Arches | Notices |
 |---|---|---|---|---|---|
-| foamy-helper | 0.1.1 | `kit/rust/foamy-helper/` (foamy-kit, vendored) | MIT | both | [N8](#n8) |
+| foamy-helper | 0.1.2 | `kit/rust/foamy-helper/` (foamy-kit, vendored) | MIT | both | [N8](#n8) |
 | foamy-train-helper | 0.1.0 | `native/` (this plugin) | MIT | both | `LICENSE` |
 
 ### Toolchain code linked into `foamy-train-helper`
@@ -464,7 +464,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### N8
 
-Shipped by: foamy-helper 0.1.1 (foamy-kit's LICENSE).
+Shipped by: foamy-helper 0.1.2 (foamy-kit's LICENSE).
 
 ```text
 MIT License

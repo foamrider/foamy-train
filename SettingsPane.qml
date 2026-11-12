@@ -16,12 +16,19 @@ FoamySettingsPage {
   property bool routeSaving: false
   signal saveRequested(string key, var value)
 
-  function value(key) { return Prefs.value(Schema.fields, root.settings, key) }
+  function value(key) {
+    return Prefs.value(Schema.fields, root.settings, key)
+  }
   function saveRoute() {
     // Editing search text is not a station change; persist only a selected pair.
-    if (!fromSearch.selected || !toSearch.selected || routeSaving) return
-    if (route && fromSearch.selected.id === route.from.id && toSearch.selected.id === route.to.id) return
-    saveRequested("route", { from: fromSearch.selected, to: toSearch.selected })
+    if (!fromSearch.selected || !toSearch.selected || routeSaving)
+      return
+    if (route && fromSearch.selected.id === route.from.id && toSearch.selected.id === route.to.id)
+      return
+    saveRequested("route", {
+      from: fromSearch.selected,
+      to: toSearch.selected
+    })
   }
   function resetRoute() {
     fromSearch.selectStation(route ? route.from : null)
@@ -30,12 +37,13 @@ FoamySettingsPage {
   onRouteChanged: resetRoute()
   // Choices plus a value saved outside them (from the CLI), in order.
   function choices(list, current) {
-    return list.indexOf(current) >= 0 ? list : list.concat([current]).sort(function(a, b) { return a - b })
+    return list.indexOf(current) >= 0 ? list : list.concat([current]).sort(function (a, b) {
+      return a - b
+    })
   }
   function secondsLabel(seconds) {
     return seconds % 60 === 0 ? FoamyI18n.tn("%1 minutes", seconds / 60) : FoamyI18n.tn("%1 seconds", seconds)
   }
-
 
   FoamySettingsSection {
     width: parent.width
@@ -99,10 +107,15 @@ FoamySettingsPage {
       label: FoamyI18n.t("Show trains in the next")
       value: String(root.value("lookAheadHours"))
       enabled: !root.saving
-      options: root.choices(Schema.hourChoices, root.value("lookAheadHours")).map(function(hours) {
-        return { value: String(hours), label: FoamyI18n.tn("%1 hours", hours) }
+      options: root.choices(Schema.hourChoices, root.value("lookAheadHours")).map(function (hours) {
+        return {
+          value: String(hours),
+          label: FoamyI18n.tn("%1 hours", hours)
+        }
       })
-      onChanged: function(v) { root.saveRequested("lookAheadHours", Number(v)) }
+      onChanged: function (v) {
+        root.saveRequested("lookAheadHours", Number(v))
+      }
     }
   }
 
@@ -117,10 +130,15 @@ FoamySettingsPage {
       label: FoamyI18n.t("Refresh every")
       value: String(root.value("refreshSeconds"))
       enabled: !root.saving
-      options: root.choices(Schema.refreshChoices, root.value("refreshSeconds")).map(function(seconds) {
-        return { value: String(seconds), label: root.secondsLabel(seconds) }
+      options: root.choices(Schema.refreshChoices, root.value("refreshSeconds")).map(function (seconds) {
+        return {
+          value: String(seconds),
+          label: root.secondsLabel(seconds)
+        }
       })
-      onChanged: function(v) { root.saveRequested("refreshSeconds", Number(v)) }
+      onChanged: function (v) {
+        root.saveRequested("refreshSeconds", Number(v))
+      }
     }
   }
 
@@ -129,7 +147,9 @@ FoamySettingsPage {
   readonly property bool scheduleOn: value("scheduleEnabled") === true
   onScheduleOnChanged: if (scheduleOn && revealSchedule) {
     revealSchedule = false
-    Qt.callLater(function() { root.ensureVisible(scheduleSection) })
+    Qt.callLater(function () {
+      root.ensureVisible(scheduleSection)
+    })
   }
 
   FoamySettingsSection {
@@ -156,14 +176,27 @@ FoamySettingsPage {
       label: FoamyI18n.t("Outside the schedule")
       value: root.value("scheduleOutsideMode")
       enabled: !root.saving
-      options: [{ value: "mute", label: FoamyI18n.t("Dim") }, { value: "hide", label: FoamyI18n.t("Hide") }]
-      onChanged: function(v) { root.saveRequested("scheduleOutsideMode", v) }
+      options: [
+        {
+          value: "mute",
+          label: FoamyI18n.t("Dim")
+        },
+        {
+          value: "hide",
+          label: FoamyI18n.t("Hide")
+        }
+      ]
+      onChanged: function (v) {
+        root.saveRequested("scheduleOutsideMode", v)
+      }
     }
     RowLayout {
       visible: root.value("scheduleEnabled")
       width: parent.width
       spacing: FoamyStyle.gap
-      Item { Layout.fillWidth: true }
+      Item {
+        Layout.fillWidth: true
+      }
       TrainText {
         Layout.preferredWidth: Style.space(64)
         text: FoamyI18n.t("From")
@@ -181,7 +214,7 @@ FoamySettingsPage {
     }
     Repeater {
       model: root.value("scheduleEnabled") ? Schema.dayKeys : []
-      ScheduleDay {
+      FoamyScheduleDay {
         required property string modelData
         required property int index
         width: parent.width
@@ -189,9 +222,14 @@ FoamySettingsPage {
         label: FoamyI18n.t(Schema.dayLabels[index])
         fromLabel: FoamyI18n.t("From")
         toLabel: FoamyI18n.t("To")
+        labelComponent: Component {
+          TrainText {}
+        }
         value: root.value(modelData)
         enabled: !root.saving
-        onChanged: function(range) { root.saveRequested(modelData, range) }
+        onChanged: function (range) {
+          root.saveRequested(modelData, range)
+        }
         onInvalid: root.saveRequested(modelData, "invalid")
       }
     }

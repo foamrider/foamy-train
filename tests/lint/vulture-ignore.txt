@@ -1,0 +1,10 @@
+# Dynamic entry points Vulture can't see (`<name>  # reason`).
+protocol_version  # tests/fake_entur.py: read by BaseHTTPRequestHandler (HTTP/1.1 keep-alive)
+log_message  # tests/fake_entur.py: BaseHTTPRequestHandler hook, overridden to keep the test output quiet
+close_connection  # tests/fake_entur.py: read by BaseHTTPRequestHandler after each request
+do_GET  # tests/fake_entur.py: BaseHTTPRequestHandler dispatches requests to do_<METHOD> by name
+do_POST  # tests/fake_entur.py: BaseHTTPRequestHandler dispatches requests to do_<METHOD> by name
+daemon_threads  # tests/fake_entur.py: read by ThreadingMixIn
+block_on_close  # tests/fake_entur.py: read by ThreadingMixIn.server_close()
+handle_error  # tests/fake_entur.py: socketserver hook, overridden to keep expected disconnects quiet
+client_address  # tests/fake_entur.py: an argument of the handle_error(request, client_address) hook signature

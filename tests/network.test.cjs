@@ -40,16 +40,13 @@ function fixture(lock) {
     route: { from: { id: "NSR:StopPlace:1", name: "One" }, to: { id: "NSR:StopPlace:2", name: "Two" } },
     pluginDir: "/fixture", helperUnavailable: false, FoamyNative, report: { status: "ready", updatedAt: 0 },
     language: "en", lookAheadHours: 24, lastAttempt: 0,
-    lockProbeAvailable: true, lockInProcess: false, lockProbeFailures: 0, lockForce: false,
-    pendingRefresh: false, pendingForce: false, lockGeneration: 0, Math, JSON, String, Date,
+    lockInProcess: false, pendingRefresh: false, pendingForce: false, Math, JSON, String, Date,
     Qt: { callLater(fn) { c.callLater.push(fn); } }, callLater: [], drainRefresh() {},
     IpcResolver: { call: (context, t, m, a) => {
       assert.equal(JSON.stringify([t, m, a]), JSON.stringify(["lock", "isLocked", []]));
       return lock === undefined || lock === null ? { ran: false } : { ran: true, output: String(lock) };
     } },
-    lockProbing: false,
-    peer: { calls: [], call(t, m, a, done) { this.calls.push([t, m, a]); this.done = done; } },
-  }, ["canFetch", "refresh", "fetch", "lockProbeDone", "startLockProbe", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "lockProbeFailed", "helperFailed", "fail", "finishFetch"]);
+  }, ["canFetch", "refresh", "fetch", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "helperFailed", "fail", "finishFetch"]);
   // The service's `live` binding: the schedule is in force or a popup is open.
   Object.defineProperty(c, "live", { get() { return c.withinSchedule || c.demanded; } });
   return c;
@@ -123,7 +120,7 @@ test("a reconnect during an active worker queues one forced refresh", () => {
   assert.equal(c.pendingRefresh, true); assert.equal(c.pendingForce, true);
   assert.equal(c.statusProcess.command, undefined);
 });
-test("a locked session (4.5 in-process probe) skips Entur and keeps probing", () => {
+test("a locked session (in-process probe) skips Entur and keeps probing", () => {
   const c = fixture(true); c.networkReady = true;
   c.refresh(false, false);
   assert.equal(c.sessionLocked, true);
@@ -137,22 +134,13 @@ test("a popup open or explicit refresh skips the probe and clears the lock", () 
   assert.equal(c.sessionLocked, false);
   assert.equal(c.statusProcess.running, true);
 });
-test("without an in-process answer the FoamyPeerIpc (omarchy-shell) probe runs first", () => {
-  for (const lock of [undefined, null]) {
-    const c = fixture(lock); c.networkReady = true;
-    c.refresh(true, false);
-    assert.equal(c.lockProbing, true);
-    assert.equal(JSON.stringify(c.peer.calls), JSON.stringify([["lock", "isLocked", []]]));
-    assert.equal(c.lockForce, true);
-    assert.equal(c.statusProcess.running, false);
-  }
-});
-test("a lock service that never answers stops being probed", () => {
-  const c = fixture(null);
-  for (let i = 0; i < 3; i++) c.lockProbeFailed();
-  assert.equal(c.lockProbeAvailable, false);
-  c.networkReady = true; c.refresh(false, false);
+test("without a lock target the session counts as unlocked and the fetch starts at once", () => {
+  const c = fixture(null); c.networkReady = true; c.sessionLocked = true;
+  c.refresh(true, false);
+  assert.equal(c.sessionLocked, false);
+  assert.equal(c.lockInProcess, false);
   assert.equal(c.statusProcess.running, true);
+  assert.ok(c.statusProcess.command.includes("--force"));
 });
 test("retries back off, stop after three, and reset after recovery", () => {
   const c = fixture(false); c.networkReady = true;
@@ -178,28 +166,6 @@ test("the poll timer waits for the rest of the current interval", () => {
   c.canPoll = false; c.schedule();
   assert.equal(c.pollTimer.running, false);
 });
-test("an omarchy-shell probe that finishes after polling stopped does not fetch", () => {
-  for (const change of [c => { c.withinSchedule = false; c.generation++; }, c => { c.active = false; c.generation++; },
-                         c => { c.route = null; }, c => { c.generation++; }]) {
-    const c = fixture(null); c.networkReady = true;
-    c.refresh(false, false);
-    assert.equal(c.lockProbing, true);
-    assert.equal(JSON.stringify(c.peer.calls), JSON.stringify([["lock", "isLocked", []]]));
-    c.lockProbing = false;
-    change(c);
-    c.lockProbeDone(0, "false\n");
-    assert.equal(c.statusProcess.running, false, change.toString());
-  }
-  const c = fixture(null); c.networkReady = true;
-  c.refresh(false, false); c.lockProbing = false;
-  c.lockProbeDone(0, "false\n");
-  assert.equal(c.statusProcess.running, true, "unchanged state still fetches");
-  const locked = fixture(null); locked.networkReady = true;
-  locked.refresh(false, false); locked.lockProbing = false;
-  locked.lockProbeDone(0, "true");
-  assert.equal(locked.sessionLocked, true);
-  assert.equal(locked.statusProcess.running, false);
-});
 test("fetch itself refuses when polling is off", () => {
   const c = fixture(false); c.withinSchedule = false;
   c.fetch(true);
@@ -215,12 +181,4 @@ test("every reconnection waits out the network settle delay", () => {
   // Handlers are not functions; check the declaration the singleton relies on.
   assert.match(qml, /onNetworkConnectedChanged:\s*networkSettled = false/);
   assert.match(qml, /running: root\.networkConnected && !root\.networkSettled/);
-});
-test("the peer probe's answer feeds lockProbeDone", () => {
-  const c = fixture(null); c.networkReady = true;
-  c.refresh(false, false);
-  c.peer.done(true, "true");
-  assert.equal(c.lockProbing, false);
-  assert.equal(c.sessionLocked, true);
-  assert.equal(c.statusProcess.running, false);
 });

@@ -1,0 +1,120 @@
+# qmllint findings accepted when the check was adopted. tests/validate.sh fails on any
+# finding not listed here. Regenerate with `tests/validate.sh --update-baseline qmllint`
+# only to drop fixed entries or after reviewing every added one; never to pass a check.
+DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+DepartureCard.qml: missing-property: Member "subtitle" not found on type "QObject" | font.pixelSize: FoamyStyle.font.subtitle
+DepartureCard.qml: unqualified: Unqualified access | cancelled: root.departure.cancelled
+DepartureCard.qml: unqualified: Unqualified access | cursorKey: "dep/" + root.departure.id + "/" + modelData.id
+DepartureCard.qml: unqualified: Unqualified access | view: root.view
+DepartureCard.qml: unqualified: Unqualified access | width: body.width
+Notice.qml: missing-property: Member "cursorKey" not found on type "QQuickItem" | hasCursor: expandable && !!view && view.cursorKey === cursorKey
+Notice.qml: missing-property: Member "detailOpened" not found on type "QQuickItem" | view.detailOpened(root)
+Notice.qml: missing-property: Member "expanded" not found on type "QQuickItem" | readonly property bool expanded: !!view && !!view.expanded[cursorKey]
+Notice.qml: missing-property: Member "revealRequested" not found on type "QQuickItem" | view.revealRequested(root)
+Notice.qml: missing-property: Member "stopHovered" not found on type "QQuickItem" | view.stopHovered(cursorKey)
+Notice.qml: missing-property: Member "toggle" not found on type "QQuickItem" | view.toggle(cursorKey)
+Notice.qml: missing-property: Member "toggle" not found on type "QQuickItem" | view.toggle(cursorKey)
+Panel.qml: missing-property: Member "barForeground" not found on type "QObject" | readonly property color foreground: bar ? bar.barForeground : Commons.Color.foreground
+Panel.qml: missing-property: Member "iconCanvas" not found on type "QObject" | fixedWidth: root.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
+Panel.qml: missing-property: Member "iconSlot" not found on type "QObject" | fixedWidth: root.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
+Panel.qml: missing-property: Member "iconSlot" not found on type "QObject" | fixedWidth: root.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
+Panel.qml: missing-property: Member "position" not found on type "QObject" | readonly property bool vertical: bar && (bar.position === "left" || bar.position === "right")
+Panel.qml: missing-property: Member "position" not found on type "QObject" | readonly property bool vertical: bar && (bar.position === "left" || bar.position === "right")
+Panel.qml: unqualified: Unqualified access | editingSettings: root.editingSettings
+Panel.qml: unqualified: Unqualified access | onCloseRequestedByView: root.editingSettings ? root.closeSettings() : root.close()
+Panel.qml: unqualified: Unqualified access | onCloseRequestedByView: root.editingSettings ? root.closeSettings() : root.close()
+Panel.qml: unqualified: Unqualified access | onCloseRequestedByView: root.editingSettings ? root.closeSettings() : root.close()
+Panel.qml: unqualified: Unqualified access | onRetryRequested: root.retrySave()
+Panel.qml: unqualified: Unqualified access | onSettingsClosed: root.closeSettings()
+Panel.qml: unqualified: Unqualified access | onSettingsRequested: root.openSettings()
+Panel.qml: unqualified: Unqualified access | onSwapRequested: root.swapDirection()
+Panel.qml: unqualified: Unqualified access | retryable: prefs.canRetry
+Panel.qml: unqualified: Unqualified access | root.save(key, value)
+Panel.qml: unqualified: Unqualified access | root.switchPanel(direction)
+Panel.qml: unqualified: Unqualified access | routeSaving: root.routeSaving
+Panel.qml: unqualified: Unqualified access | saving: root.saving
+Panel.qml: unqualified: Unqualified access | settings: root.effectiveSettings
+Panel.qml: unqualified: Unqualified access | settingsError: root.settingsError
+SettingsPane.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+SettingsPane.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+SettingsPane.qml: unqualified: Unqualified access | enabled: !root.saving
+SettingsPane.qml: unqualified: Unqualified access | onInvalid: root.saveRequested(modelData, "invalid")
+SettingsPane.qml: unqualified: Unqualified access | root.saveRequested(modelData, range)
+SettingsPane.qml: unqualified: Unqualified access | value: root.value(modelData)
+StationSearch.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var data = JSON.parse(output.text)
+StationSearch.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var stations = Model.stations(data)
+StationSearch.qml: id-shadows-member: Id for object SafeTextField shadows property "input". Rename one or the other. | input.text = value ? value.name : ""
+StationSearch.qml: id-shadows-member: Note: Id defined here | id: input
+StationSearch.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+StationSearch.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+StationSearch.qml: unqualified: Unqualified access | Keys.onDownPressed: if (index + 1 < resultRepeater.count)
+StationSearch.qml: unqualified: Unqualified access | Keys.onUpPressed: index > 0 ? resultRepeater.itemAt(index - 1).forceActiveFocus() : input.focusInput()
+StationSearch.qml: unqualified: Unqualified access | Keys.onUpPressed: index > 0 ? resultRepeater.itemAt(index - 1).forceActiveFocus() : input.focusInput()
+StationSearch.qml: unqualified: Unqualified access | resultRepeater.itemAt(index + 1).forceActiveFocus()
+StationSearch.qml: unqualified: Unqualified access | root.choose(modelData)
+StationSearch.qml: unqualified: Unqualified access | width: root.width
+TrainBar.qml: missing-property: Member "body" not found on type "QObject" | fontSize: Style.font.body
+TrainBar.qml: missing-property: Member "body" not found on type "QObject" | property real fontSize: Style.font.body
+TrainBar.qml: missing-property: Member "family" not found on type "QObject" | property string iconFontFamily: Style.font.family
+TrainBar.qml: missing-property: Member "iconCanvas" not found on type "QObject" | width: Style.bar.iconCanvas
+TrainService.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var parsed = Model.route(JSON.parse(configuredRoute))
+TrainService.qml: import: Type TrainService not declared as singleton in qmldir but using pragma Singleton
+TrainService.qml: missing-property: Member "requestInput" not found on type TrainService::statusProcess with type Process | statusProcess.requestInput = JSON.stringify(route) + "\n"
+TrainText.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
+TrainView.qml: id-shadows-member: Id for object FoamyHeroBand shadows property "band". Rename one or the other. | var item = cursorKey === "swap" || cursorKey === "settings" ? band : cursorKey === "choose" ? chooseAction : cursorKey === "refresh" ? refreshAction : null
+TrainView.qml: id-shadows-member: Note: Id defined here | id: band
+TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TrainView.qml: missing-property: Member "display" not found on type "QObject" | font.pixelSize: FoamyStyle.font.display
+TrainView.qml: missing-property: Member "heading" not found on type "QObject" | font.pixelSize: FoamyStyle.font.heading
+TrainView.qml: missing-property: Member "heading" not found on type "QObject" | font.pixelSize: FoamyStyle.font.heading
+TrainView.qml: missing-property: Member "heading" not found on type "QObject" | font.pixelSize: FoamyStyle.font.heading
+TrainView.qml: missing-property: Member "heading" not found on type "QObject" | spacing: FoamyStyle.font.heading
+TrainView.qml: missing-property: Member "numeral" not found on type "QObject" | font.pixelSize: FoamyStyle.font.numeral
+TrainView.qml: missing-property: Member "numeralCompact" not found on type "QObject" | font.pixelSize: FoamyStyle.font.numeralCompact
+TrainView.qml: unqualified: Unqualified access | destination: root.report.route ? root.report.route.to.name : ""
+TrainView.qml: unqualified: Unqualified access | destination: root.report.route ? root.report.route.to.name : ""
+TrainView.qml: unqualified: Unqualified access | language: root.language
+TrainView.qml: unqualified: Unqualified access | nowEpoch: root.nowEpoch
+TrainView.qml: unqualified: Unqualified access | stale: root.stale
+TrainView.qml: unqualified: Unqualified access | text: FoamyI18n.t(modelData.label)
+TrainView.qml: unqualified: Unqualified access | text: modelData.value
+TrainView.qml: unqualified: Unqualified access | text: root.formatNumber(parent.modelData.value)
+TrainView.qml: unqualified: Unqualified access | view: root
+TrainView.qml: unqualified: Unqualified access | view: root
+TrainView.qml: unqualified: Unqualified access | view: root
+preview/BarPreview.qml: missing-property: Member "background" not found on type "QObject" | color: Commons.Color.bar.background
+preview/BarPreview.qml: missing-property: Member "text" not found on type "QObject" | foreground: Commons.Color.bar.text
+preview/BarPreview.qml: property-override: Member "data" shadows member "data" from base type "QQuickItem", use a different name or add a final or override specifier. | readonly property var data: preview.sample(modelData.mode)
+preview/BarPreview.qml: unqualified: Unqualified access | Component.onCompleted: if (noticeIcon !== modelData.icon)
+preview/BarPreview.qml: unqualified: Unqualified access | console.log("FOAMY FAIL " + modelData.mode + " notice icon was '" + noticeIcon + "'")
+preview/BarPreview.qml: unqualified: Unqualified access | model: preview.modes
+preview/BarPreview.qml: unqualified: Unqualified access | readonly property var data: preview.sample(modelData.mode)
+preview/BarPreview.qml: unqualified: Unqualified access | readonly property var data: preview.sample(modelData.mode)
+preview/BarPreview.qml: unqualified: Unqualified access | showMinutes: modelData.mode !== "hidden"
+preview/BarPreview.qml: unqualified: Unqualified access | stale: modelData.mode === "stale"
+preview/BarPreview.qml: unqualified: Unqualified access | text: modelData.label
+preview/BarPreview.qml: unqualified: Unqualified access | withinSchedule: modelData.mode !== "schedule"
+preview/Preview.qml: unqualified: Unqualified access | departures: preview.departures
+preview/Preview.qml: unqualified: Unqualified access | editingSettings: preview.previewState.indexOf("settings") === 0
+preview/Preview.qml: unqualified: Unqualified access | if (preview.previewState === "cursor") {
+preview/Preview.qml: unqualified: Unqualified access | if (preview.previewState.indexOf("menu") === 0) {
+preview/Preview.qml: unqualified: Unqualified access | loading: preview.previewState === "loading"
+preview/Preview.qml: unqualified: Unqualified access | next: Model.next(preview.departures)
+preview/Preview.qml: unqualified: Unqualified access | outsideSchedule: preview.previewState === "schedule" || preview.previewState === "menu-outside"
+preview/Preview.qml: unqualified: Unqualified access | outsideSchedule: preview.previewState === "schedule" || preview.previewState === "menu-outside"
+preview/Preview.qml: unqualified: Unqualified access | report: preview.report
+preview/Preview.qml: unqualified: Unqualified access | retryable: preview.previewState === "settings-error"
+preview/Preview.qml: unqualified: Unqualified access | scheduleEnabled: preview.previewState === "settings-schedule",
+preview/Preview.qml: unqualified: Unqualified access | settingsError: preview.previewState === "settings-error" ? "Couldn't save the setting." : ""
+preview/Preview.qml: unqualified: Unqualified access | stale: preview.stale
+preview/Preview.qml: unqualified: Unqualified access | target: preview

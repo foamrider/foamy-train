@@ -14,31 +14,76 @@ Item {
   required property Item anchorItem
   property var previewStates: ["bar"]
   property string previewState: "bar"
-  readonly property Item popup: popup
+  readonly property var popup: previewPopup
   readonly property var modes: [
-    { label: "On time", mode: "normal", icon: "" },
-    { label: "Later departure", mode: "long", icon: "" },
-    { label: "Delayed 3 minutes", mode: "delay", icon: "" },
-    { label: "Incident", mode: "incident", icon: "warning" },
-    { label: "Information", mode: "info", icon: "info" },
-    { label: "Route information", mode: "route-info", icon: "info" },
-    { label: "Cancellation", mode: "cancelled", icon: "cancelled" },
-    { label: "Cached times", mode: "stale", icon: "" },
-    { label: "Outside schedule", mode: "schedule", icon: "" },
-    { label: "Minutes hidden · incident", mode: "hidden", icon: "warning" }
+    {
+      label: "On time",
+      mode: "normal",
+      icon: ""
+    },
+    {
+      label: "Later departure",
+      mode: "long",
+      icon: ""
+    },
+    {
+      label: "Delayed 3 minutes",
+      mode: "delay",
+      icon: ""
+    },
+    {
+      label: "Incident",
+      mode: "incident",
+      icon: "warning"
+    },
+    {
+      label: "Information",
+      mode: "info",
+      icon: "info"
+    },
+    {
+      label: "Route information",
+      mode: "route-info",
+      icon: "info"
+    },
+    {
+      label: "Cancellation",
+      mode: "cancelled",
+      icon: "cancelled"
+    },
+    {
+      label: "Cached times",
+      mode: "stale",
+      icon: ""
+    },
+    {
+      label: "Outside schedule",
+      mode: "schedule",
+      icon: ""
+    },
+    {
+      label: "Minutes hidden · incident",
+      mode: "hidden",
+      icon: "warning"
+    }
   ]
   function sample(mode) {
     var r = Fixtures.report(mode === "long" ? "long" : "normal")
-    if (mode === "delay") r.departures[0] = Fixtures.departure("a", 13, "R10", 3)
-    if (mode === "incident" || mode === "hidden") r.departures[0].notices = [Fixtures.notice("x", "Signal fault", "warning")]
-    if (mode === "info") r.departures[0].notices = [Fixtures.notice("x", "Shorter train", "info")]
-    if (mode === "route-info") r.routeNotices = [Fixtures.notice("route", "Lift unavailable", "info")]
-    if (mode === "cancelled") r.departures[1].cancelled = true
+    if (mode === "delay")
+      r.departures[0] = Fixtures.departure("a", 13, "R10", 3)
+    if (mode === "incident" || mode === "hidden")
+      r.departures[0].notices = [Fixtures.notice("x", "Signal fault", "warning")]
+    if (mode === "info")
+      r.departures[0].notices = [Fixtures.notice("x", "Shorter train", "info")]
+    if (mode === "route-info")
+      r.routeNotices = [Fixtures.notice("route", "Lift unavailable", "info")]
+    if (mode === "cancelled")
+      r.departures[1].cancelled = true
     return r
   }
 
   FoamyPopup {
-    id: popup
+    id: previewPopup
     anchorItem: preview.anchorItem
     bar: preview.bar
     open: true
@@ -52,9 +97,15 @@ Item {
           Row {
             required property var modelData
             spacing: FoamyStyle.gapLarge
-            Train.TrainText { width: 200; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; wrapMode: Text.NoWrap }
+            Train.TrainText {
+              width: 200
+              anchors.verticalCenter: parent.verticalCenter
+              text: modelData.label
+              wrapMode: Text.NoWrap
+            }
             Rectangle {
-              width: 160; height: 30
+              width: 160
+              height: 30
               radius: FoamyStyle.radiusSmall
               color: Commons.Color.bar.background
               Train.TrainBar {

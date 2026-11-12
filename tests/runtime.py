@@ -49,7 +49,6 @@ ShellRoot {
   property bool locked: true
   property var route: ({ from: { id: "NSR:StopPlace:59872", name: "Oslo S" }, to: { id: "NSR:StopPlace:62339", name: "Lillestrøm" } })
   property var entry: ({ route: shell.route, refreshSeconds: 300 })
-  property int step: 0
   property int savedCount: 0
   function check(ok, what) { if (!ok) console.log("FOAMY FAIL " + what); else console.log("FOAMY OK " + what) }
   MockBar { id: bar; moduleName: "foamy.train" }
@@ -110,167 +109,179 @@ ShellRoot {
     search.searching = true
     search.runSearch()
   }
-  Timer {
-    interval: 400; repeat: true; running: true
-    onTriggered: {
-      var s = Train.TrainService
-      switch (shell.step++) {
-      case 0:
-        check(s.active && s.configured, "service active and configured by the leader")
-        check(s.refreshSeconds === 300 && s.route && s.route.from.name === "Oslo S", "leader pushed its settings")
-        check(s.clock.step === 60000, "minute clock while every popup is closed")
-        s.statusProcess.running = false
-        search.deadline = ["/nonexistent/foamy-no-such-command"]
-        shell.startSearch("Oslo")
-        break
-      case 1:
-        // running -> false for a start that failed arrives asynchronously.
-        if (search.inFlight) { shell.step--; break }
-        check(!search.searching, "a search that can't start stops searching")
-        check(search.error === "Station search failed. Try again.", "and says it failed: " + search.error)
-        search.deadline = ["timeout", "--kill-after=2s", "18s"]
-        shell.startSearch("Bergen")
-        s.refresh(false, false)
-        check(s.lockInProcess && s.sessionLocked, "the in-process lock probe reports locked")
-        check(!s.statusProcess.running, "no Entur request while locked")
-        check(s.pollInterval === 10, "locked: only the cheap lock probe ticks (10 s)")
-        shell.locked = false
-        break
-      case 2:
-        if (search.inFlight) { shell.step--; break }
-        check(!search.searching && search.error === FoamyNative.UNAVAILABLE_TEXT, "the next search runs and finishes: " + search.error)
-        if (s.loading) { shell.step--; break }
-        s.refresh(false, false)
-        check(!s.sessionLocked, "unlocked session polls again")
-        check(s.statusProcess.running, "a request starts after unlock")
-        break
-      case 3:
-        if (s.loading) { shell.step--; break }
-        var argv = s.statusProcess.command.join(" ")
-        check(argv.indexOf("--route-stdin") >= 0 && argv.indexOf("NSR:") < 0 && argv.indexOf("Oslo") < 0, "route is not in argv")
-        check(argv.indexOf("timeout --kill-after=2s 18s bash -c") === 0 && argv.indexOf("foamy-train-helper") >= 0, "the native helper runs under the widget timeout")
-        check(s.report.route && s.report.route.to.name === "Lillestrøm", "helper received the route on stdin (" + s.report.status + "/" + s.report.errorCode + ")")
-        check(s.report.errorCode === "offline", "sandbox fetch is offline (no network)")
-        check(!s.networkConnected, "the service sees no network connection (system bus isolated)")
-        // The cache holds 10 departures with 300 notices each and 10,000 route notices.
-        var view = live.scroller.contentItem
-        var notices = count(view, "Notice"), cards = count(view, "DepartureCard")
-        check(s.report.status === "stale" && s.report.departures.length === 6 && s.report.routeNotices.length === 5,
-              "an oversized cached report is cut to 6 departures and 5 route notices: " + s.report.departures.length + "/" + s.report.routeNotices.length)
-        check(notices === 23 && cards === 5, "at most 6 x 3 + 5 notice delegates: " + notices + " notices, " + cards + " cards")
-        var omitted = find(view, "noticesOmitted")
-        check(s.report.noticesOmitted === true && omitted && omitted.visible, "the popup says some notices are not shown")
-        a.open()
-        break
-      case 4:
-        check(s.demanded && s.clock.step === 1000, "open popup raises demand and second precision")
-        check(s.pollInterval === 300, "open popup polls at the configured interval")
-        a.save("refreshSeconds", 600)
-        var saved = bar.saved[bar.saved.length - 1]
-        check(saved && saved.settings.refreshSeconds === 600 && saved.settings.route.from.id === "NSR:StopPlace:59872", "inline save keeps the route")
-        a.swapDirection()
-        saved = bar.saved[bar.saved.length - 1]
-        check(saved.settings.route.from.name === "Lillestrøm" && saved.settings.route.to.name === "Oslo S", "swap saves the reversed pair")
-        a.save("refreshSeconds", 7)
-        check(a.settingsError !== "", "invalid interval refused: " + a.settingsError)
-        a.save("route", { from: shell.route.from, to: shell.route.from })
-        check(a.settingsError !== "", "same-station route refused: " + a.settingsError)
-        check(JSON.parse(s.statusObject ? JSON.stringify(s.statusObject()) : "{}").pollSeconds > 0, "status object")
-        a.close()
-        break
-      case 5:
-        check(!s.demanded, "demand drops when the popup closes")
-        check(body.scroller.contentHeight > body.scroller.height + 100, "fixture body overflows its viewport")
-        body.moveRequested(0, -1)
-        check(body.cursorKey === "refresh" && body.scroller.contentY > 0, "cursor on Refresh scrolls to the footer")
-        body.moveRequested(0, -1)
-        check(body.cursorKey === "settings" && body.scroller.contentY === 0, "cursor back on Settings scrolls the header into view")
-        body.moveRequested(0, 1); body.moveRequested(0, -1); body.moveRequested(0, -1)
-        check(body.cursorKey === "swap" && body.scroller.contentY === 0, "cursor on Switch direction keeps the header visible")
-        // A mouse-wheel notch split 8 x 15 scrolls about three rows (FoamyWheelScroll).
-        var wheel = body.scrollerWheel
-        check(!!wheel && wheel.target === body.scroller, "the body scrolls with the kit wheel handling")
-        if (wheel) {
-          for (var n = 0; n < 8; n++) wheel.wheel({ angleDelta: Qt.point(0, -15), pixelDelta: Qt.point(0, 0) })
-          var to = isNaN(wheel.destination) ? body.scroller.contentY : wheel.destination
-          check(Math.abs(to - Math.min(wheel.notch, wheel.maxY)) < 1, "one wheel notch scrolls about three rows: " + to)
-          wheel.scrollTo(0, false)
-        }
-        // Outside the schedule the popup shows the departures as usual; the
-        // header says why the bar is muted.
-        body.outsideSchedule = true
-        break
-      case 6:
-        var view = body.scroller.contentItem.children[0]
-        var band = null, details = null
-        for (var i = 0; i < view.children.length; i++) {
-          if (view.children[i].objectName === "heroBand") band = view.children[i]
-          if (view.children[i].objectName === "departureDetails") details = view.children[i]
-        }
-        check(band && band.meta.indexOf(" · outside your schedule") > 0, "outside the schedule the header says so: " + (band ? band.meta : "?"))
-        check(details && details.visible, "outside the schedule the departures still show")
-        var stops = view.stops.join(",")
-        check(stops.indexOf("swap,settings,") === 0 && view.stops[view.stops.length - 1] === "refresh", "stops: Switch direction, ⋯, … Refresh: " + stops)
-        // Snooze and Settings are in the ⋯ menu; Switch direction stays a button.
-        check(band.settingsInMenu && band.shownTrailing.length === 1 && band.menuItems[0].iconName === "sun"
-              && band.menuItems[0].text === "Resume now", "Snooze and Settings are in the ⋯ menu; outside the schedule it offers Resume now")
-        view.activate("settings")
-        check(band.menuOpen && body.blocked, "Enter on ⋯ opens the menu, which takes the keys")
-        band.closeMenu()
-        body.snoozed = true
-        check(band.meta.indexOf(" · snoozed") > 0 && band.menuItems[0].text === "Stop snoozing", "snoozed: the header says so; the menu offers Stop snoozing")
-        body.outsideSchedule = false; body.snoozed = false
-        check(band.menuItems[0].text === "Snooze until tomorrow" && band.menuItems[0].iconName === "moon", "in the schedule the menu offers Snooze until tomorrow")
-        // The service: no schedule, so in force until snoozed.
-        shell.savedCount = bar.saved.length
-        check(s.withinSchedule && !s.snoozed, "without a schedule the widget is in force")
-        s.toggleSnooze()
-        var midnight = new Date(); midnight.setHours(24, 0, 0, 0)
-        check(!s.withinSchedule && s.snoozed && !s.canPoll && !s.canFetch(), "snoozing mutes the widget and stops background fetches")
-        check(s.scheduleOverride && s.scheduleOverride.until === midnight.getTime(), "without a schedule the snooze lasts until midnight")
-        check(bar.saved.length === shell.savedCount, "snoozing never saves settings")
-        a.open()
-        break
-      case 7:
-        check(s.live && s.canFetch(), "an open popup still fetches while snoozed")
-        a.close()
-        break
-      case 8:
-        check(!s.live && !s.canFetch(), "closing the popup stops fetching again")
-        s.toggleSnooze()
-        check(s.withinSchedule && !s.snoozed && s.scheduleOverride === null, "pressing again resumes the schedule")
-        check(bar.saved.length === shell.savedCount, "resuming never saves settings")
-        // A departure request that can't start (no such deadline command):
-        // Quickshell emits no exited(), only running -> false. The request
-        // still ends: the failure shows and the refresh queued behind it runs.
-        s.deadline = ["/nonexistent/foamy-no-such-command"]
-        s.refresh(true, true)
-        s.refresh(true, true)
-        check(s.inFlight && s.pendingRefresh, "a second refresh queues behind the first")
-        break
-      case 9:
-        if (s.inFlight || s.pendingRefresh) { shell.step--; break }
-        check(!s.loading && s.report.error === "Train request failed. Try Refresh.",
-              "a request that can't start fails visibly: " + s.report.status + "/" + s.report.error)
-        s.deadline = ["timeout", "--kill-after=2s", "18s"]
-        s.refresh(true, true)
-        break
-      case 10:
-        if (s.inFlight) { shell.step--; break }
-        check(s.report.errorCode === "offline" && s.report.error !== "Train request failed. Try Refresh.",
-              "the next request runs normally: " + s.report.errorCode)
-        // A helper whose search reply lists more stations than the 8 asked for.
-        search.pluginDir = Quickshell.env("FOAMY_TRAIN_FAKE_SEARCH")
-        shell.startSearch("Many")
-        break
-      case 11:
-        if (search.inFlight) { shell.step--; break }
-        check(search.error === "" && search.results.length === 8 && search.results[7].id === "NSR:StopPlace:8",
-              "a long station list shows the first 8: " + search.results.length + " " + search.error)
-        console.log("FOAMY DONE")
-        Qt.quit()
-      }
+  FoamyWait { id: wait }
+  // Runs `then` once `condition` holds; a timeout fails the run and ends it.
+  function when(condition, label, then) {
+    wait.waitFor(condition, 15000, function(ok) {
+      if (ok) then()
+      else Qt.quit()
+    }, label)
+  }
+  readonly property var s: Train.TrainService
+  Component.onCompleted: when(function() { return s.active && s.configured }, "the leader configures the service", step0)
+  function step0() {
+    check(s.active && s.configured, "service active and configured by the leader")
+    check(s.refreshSeconds === 300 && s.route && s.route.from.name === "Oslo S", "leader pushed its settings")
+    check(s.clock.step === 60000, "minute clock while every popup is closed")
+    s.statusProcess.running = false
+    search.deadline = ["/nonexistent/foamy-no-such-command"]
+    shell.startSearch("Oslo")
+    // running -> false for a start that failed arrives asynchronously.
+    when(function() { return !search.inFlight }, "the search that can't start ends", step1)
+  }
+  function step1() {
+    check(!search.searching, "a search that can't start stops searching")
+    check(search.error === "Station search failed. Try again.", "and says it failed: " + search.error)
+    search.deadline = ["timeout", "--kill-after=2s", "18s"]
+    shell.startSearch("Bergen")
+    s.refresh(false, false)
+    check(s.lockInProcess && s.sessionLocked, "the in-process lock probe reports locked")
+    check(!s.statusProcess.running, "no Entur request while locked")
+    check(s.pollInterval === 10, "locked: only the cheap lock probe ticks (10 s)")
+    shell.locked = false
+    when(function() { return !search.inFlight && !s.loading }, "the next search and any fetch end", step2)
+  }
+  function step2() {
+    check(!search.searching && search.error === FoamyNative.UNAVAILABLE_TEXT, "the next search runs and finishes: " + search.error)
+    s.refresh(false, false)
+    check(!s.sessionLocked, "unlocked session polls again")
+    check(s.statusProcess.running, "a request starts after unlock")
+    when(function() { return !s.loading && !s.inFlight }, "the unlocked request ends", step3)
+  }
+  function step3() {
+    var argv = s.statusProcess.command.join(" ")
+    check(argv.indexOf("--route-stdin") >= 0 && argv.indexOf("NSR:") < 0 && argv.indexOf("Oslo") < 0, "route is not in argv")
+    check(argv.indexOf("timeout --kill-after=2s 18s bash -c") === 0 && argv.indexOf("foamy-train-helper") >= 0, "the native helper runs under the widget timeout")
+    check(s.report.route && s.report.route.to.name === "Lillestrøm", "helper received the route on stdin (" + s.report.status + "/" + s.report.errorCode + ")")
+    check(s.report.errorCode === "offline", "sandbox fetch is offline (no network)")
+    check(!s.networkConnected, "the service sees no network connection (system bus isolated)")
+    // The cache holds 10 departures with 300 notices each and 10,000 route notices.
+    var view = live.scroller.contentItem
+    var notices = count(view, "Notice"), cards = count(view, "DepartureCard")
+    check(s.report.status === "stale" && s.report.departures.length === 6 && s.report.routeNotices.length === 5,
+          "an oversized cached report is cut to 6 departures and 5 route notices: " + s.report.departures.length + "/" + s.report.routeNotices.length)
+    check(notices === 23 && cards === 5, "at most 6 x 3 + 5 notice delegates: " + notices + " notices, " + cards + " cards")
+    var omitted = find(view, "noticesOmitted")
+    check(s.report.noticesOmitted === true && omitted && omitted.visible, "the popup says some notices are not shown")
+    a.open()
+    when(function() { return s.demanded }, "the open popup raises demand", step4)
+  }
+  function step4() {
+    check(s.clock.step === 1000, "open popup raises demand and second precision")
+    check(s.pollInterval === 300, "open popup polls at the configured interval")
+    a.save("refreshSeconds", 600)
+    var saved = bar.saved[bar.saved.length - 1]
+    check(saved && saved.settings.refreshSeconds === 600 && saved.settings.route.from.id === "NSR:StopPlace:59872", "inline save keeps the route")
+    a.swapDirection()
+    saved = bar.saved[bar.saved.length - 1]
+    check(saved.settings.route.from.name === "Lillestrøm" && saved.settings.route.to.name === "Oslo S", "swap saves the reversed pair")
+    a.save("refreshSeconds", 7)
+    check(a.settingsError !== "", "invalid interval refused: " + a.settingsError)
+    a.save("route", { from: shell.route.from, to: shell.route.from })
+    check(a.settingsError !== "", "same-station route refused: " + a.settingsError)
+    check(JSON.parse(JSON.stringify(s.statusObject())).pollSeconds > 0, "status object")
+    a.close()
+    when(function() { return !s.demanded }, "demand drops when the popup closes", step5)
+  }
+  function step5() {
+    check(!s.demanded, "demand drops when the popup closes")
+    check(body.scroller.contentHeight > body.scroller.height + 100, "fixture body overflows its viewport")
+    body.moveRequested(0, -1)
+    check(body.cursorKey === "refresh" && body.scroller.contentY > 0, "cursor on Refresh scrolls to the footer")
+    body.moveRequested(0, -1)
+    check(body.cursorKey === "settings" && body.scroller.contentY === 0, "cursor back on Settings scrolls the header into view")
+    body.moveRequested(0, 1); body.moveRequested(0, -1); body.moveRequested(0, -1)
+    check(body.cursorKey === "swap" && body.scroller.contentY === 0, "cursor on Switch direction keeps the header visible")
+    // A mouse-wheel notch split 8 x 15 scrolls about three rows (FoamyWheelScroll).
+    var wheel = body.scrollerWheel
+    check(!!wheel && wheel.target === body.scroller, "the body scrolls with the kit wheel handling")
+    if (wheel) {
+      for (var n = 0; n < 8; n++) wheel.wheel({ angleDelta: Qt.point(0, -15), pixelDelta: Qt.point(0, 0) })
+      var to = isNaN(wheel.destination) ? body.scroller.contentY : wheel.destination
+      check(Math.abs(to - Math.min(wheel.notch, wheel.maxY)) < 1, "one wheel notch scrolls about three rows: " + to)
+      wheel.scrollTo(0, false)
     }
+    // Outside the schedule the popup shows the departures as usual; the
+    // header says why the bar is muted.
+    body.outsideSchedule = true
+    when(function() { return bodyPart("heroBand") && bodyPart("heroBand").meta.indexOf(" · outside your schedule") > 0 },
+         "outside the schedule the header says so", step6)
+  }
+  // A direct child of the fixture body's content column.
+  function bodyPart(name) {
+    var view = body.scroller.contentItem.children[0]
+    for (var i = 0; i < view.children.length; i++) if (view.children[i].objectName === name) return view.children[i]
+    return null
+  }
+  function step6() {
+    var view = body.scroller.contentItem.children[0]
+    var band = bodyPart("heroBand"), details = bodyPart("departureDetails")
+    check(band.meta.indexOf(" · outside your schedule") > 0, "outside the schedule the header says so: " + band.meta)
+    check(details && details.visible, "outside the schedule the departures still show")
+    var stops = view.stops.join(",")
+    check(stops.indexOf("swap,settings,") === 0 && view.stops[view.stops.length - 1] === "refresh", "stops: Switch direction, ⋯, … Refresh: " + stops)
+    // Snooze and Settings are in the ⋯ menu; Switch direction stays a button.
+    check(band.settingsInMenu && band.shownTrailing.length === 1 && band.menuItems[0].iconName === "sun"
+          && band.menuItems[0].text === "Resume now", "Snooze and Settings are in the ⋯ menu; outside the schedule it offers Resume now")
+    view.activate("settings")
+    check(band.menuOpen && body.blocked, "Enter on ⋯ opens the menu, which takes the keys")
+    band.closeMenu()
+    body.snoozed = true
+    check(band.meta.indexOf(" · snoozed") > 0 && band.menuItems[0].text === "Stop snoozing", "snoozed: the header says so; the menu offers Stop snoozing")
+    body.outsideSchedule = false; body.snoozed = false
+    check(band.menuItems[0].text === "Snooze until tomorrow" && band.menuItems[0].iconName === "moon", "in the schedule the menu offers Snooze until tomorrow")
+    // The service: no schedule, so in force until snoozed.
+    shell.savedCount = bar.saved.length
+    check(s.withinSchedule && !s.snoozed, "without a schedule the widget is in force")
+    s.toggleSnooze()
+    var midnight = new Date(); midnight.setHours(24, 0, 0, 0)
+    check(!s.withinSchedule && s.snoozed && !s.canPoll && !s.canFetch(), "snoozing mutes the widget and stops background fetches")
+    check(s.scheduleOverride && s.scheduleOverride.until === midnight.getTime(), "without a schedule the snooze lasts until midnight")
+    check(bar.saved.length === shell.savedCount, "snoozing never saves settings")
+    a.open()
+    when(function() { return s.demanded }, "the popup opens while snoozed", step7)
+  }
+  function step7() {
+    check(s.live && s.canFetch(), "an open popup still fetches while snoozed")
+    a.close()
+    when(function() { return !s.demanded }, "the popup closes while snoozed", step8)
+  }
+  function step8() {
+    check(!s.live && !s.canFetch(), "closing the popup stops fetching again")
+    s.toggleSnooze()
+    check(s.withinSchedule && !s.snoozed && s.scheduleOverride === null, "pressing again resumes the schedule")
+    check(bar.saved.length === shell.savedCount, "resuming never saves settings")
+    // A departure request that can't start (no such deadline command):
+    // Quickshell emits no exited(), only running -> false. The request
+    // still ends: the failure shows and the refresh queued behind it runs.
+    when(function() { return !s.inFlight && !s.pendingRefresh }, "requests from resuming end", function() {
+      s.deadline = ["/nonexistent/foamy-no-such-command"]
+      s.refresh(true, true)
+      s.refresh(true, true)
+      check(s.inFlight && s.pendingRefresh, "a second refresh queues behind the first")
+      when(function() { return !s.inFlight && !s.pendingRefresh }, "the failed request and the queued one end", step9)
+    })
+  }
+  function step9() {
+    check(!s.loading && s.report.error === "Train request failed. Try Refresh.",
+          "a request that can't start fails visibly: " + s.report.status + "/" + s.report.error)
+    s.deadline = ["timeout", "--kill-after=2s", "18s"]
+    s.refresh(true, true)
+    when(function() { return !s.inFlight }, "the next request ends", step10)
+  }
+  function step10() {
+    check(s.report.errorCode === "offline" && s.report.error !== "Train request failed. Try Refresh.",
+          "the next request runs normally: " + s.report.errorCode)
+    // A helper whose search reply lists more stations than the 8 asked for.
+    search.pluginDir = Quickshell.env("FOAMY_TRAIN_FAKE_SEARCH")
+    shell.startSearch("Many")
+    when(function() { return !search.inFlight }, "the long station search ends", step11)
+  }
+  function step11() {
+    check(search.error === "" && search.results.length === 8 && search.results[7].id === "NSR:StopPlace:8",
+          "a long station list shows the first 8: " + search.results.length + " " + search.error)
+    console.log("FOAMY DONE")
+    Qt.quit()
   }
 }
 '''
@@ -323,17 +334,20 @@ ROUTE = {"from": {"id": "NSR:StopPlace:59872", "name": "Oslo S"}, "to": {"id": "
 
 def main():
     run = harness.Run("4.5", SHELL, plugin=PLUGIN, prefix="foamy-train-runtime-")
-    # The harness gives qs a private session bus only. On the system bus
-    # NetworkManager reports the real connection, and two seconds later
-    # the service would ask Entur for real departures. A dead system bus
-    # keeps it offline; the non-loopback endpoint override makes any
-    # request that still goes out fail before it connects.
-    run.env["DBUS_SYSTEM_BUS_ADDRESS"] = f"unix:path={run.base}/no-system-bus"
+    # The harness gives qs a dead system bus, so NetworkManager is invisible
+    # (on the real one the service would ask Entur two seconds later); the
+    # non-loopback endpoint override makes any request that still goes out
+    # fail before it connects.
     run.env["FOAMY_TRAIN_ENTUR_URL"] = "http://entur.invalid"
     run.env["FOAMY_TRAIN_FAKE_SEARCH"] = str(fake_search(run.base / "fake-search"))
     oversized_cache(Path(run.env["HOME"]), ROUTE)
-    run.run(timeout=60)
+    run.run(timeout=90)
     oks = run.log.count("FOAMY OK")
+    # Nothing in the run may reach a host command (the harness stubs them).
+    hosts = run.host_commands()
+    if hosts:
+        run.ok = False
+        print("host commands run: " + "; ".join(hosts))
     if run.ok:
         print(f"4.5: {oks} checks passed")
         run.cleanup()

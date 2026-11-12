@@ -32,8 +32,6 @@ import "plugin/tests/Fixtures.js" as Fixtures
 
 ShellRoot {
   id: shell
-  property int step: 0
-  property var seen: []
   function check(ok, what) { console.log((ok ? "FOAMY OK " : "FOAMY FAIL ") + what) }
   FloatingWindow {
     visible: true; implicitWidth: 420; implicitHeight: 640
@@ -57,50 +55,47 @@ ShellRoot {
     return keys
   }
   function steady(keys, key) { return keys.every(function(k) { return k === key }) }
-  Timer {
-    interval: 200; repeat: true; running: true
-    onTriggered: {
-      switch (shell.step++) {
-      case 0:
-        check(shell.view && shell.view.stops.join(",") === "swap,settings,refresh", "stops are swap, settings (⋯), refresh: " + (shell.view ? shell.view.stops.join(",") : "?"))
-        var before = shell.view.stops
-        shell.tick()
-        check(shell.view.stops !== before, "a clock tick rebuilds the stops array (as in the live popup)")
-        break
-      case 1:
-        // Pointer: over Switch direction, then over Refresh, then out of the popup.
-        shell.view.stopHovered("swap")
-        shell.view.stopHovered("refresh")
-        check(body.cursorKey === "refresh", "hover lights Refresh")
-        var keys = shell.ticks()
-        check(steady(keys, "refresh"), "Refresh stays lit while the clock ticks: " + keys.join(" "))
-        break
-      case 2:
-        shell.view.stopHovered("refresh")
-        shell.view.stopHovered("swap")
-        var keys2 = shell.ticks()
-        check(steady(keys2, "swap"), "Switch direction stays lit while the clock ticks: " + keys2.join(" "))
-        break
-      case 3:
-        // Keyboard: Down from Switch direction to Settings (the ⋯ button), then tick.
-        body.moveRequested(0, 1)
-        check(body.cursorKey === "settings", "Down moves to Settings")
-        var keys3 = shell.ticks()
-        check(steady(keys3, "settings"), "Settings stays lit while the clock ticks: " + keys3.join(" "))
-        break
-      case 4:
-        // A stop that disappears (the next train leaves and its notice goes) drops the cursor.
-        body.report = Fixtures.report("route")
-        shell.view.stopHovered("route/station")
-        check(body.cursorKey === "route/station", "hover lights the route notice")
-        body.report = Fixtures.report("normal")
-        check(body.cursorKey === "" && body.heldKey === "", "cursor leaves a stop that is gone: '" + body.cursorKey + "'")
-        shell.tick()
-        check(body.cursorKey === "", "and does not come back on the next tick")
-        console.log("FOAMY DONE")
-        Qt.quit()
-      }
-    }
+  FoamyWait { id: wait }
+  // The steps are synchronous once the popup body has laid out its stops.
+  Component.onCompleted: wait.waitFor(function() { return shell.view && shell.view.stops.length === 3 }, 15000, function(ok) {
+    if (ok) { stops(); pointer(); keyboard(); vanished() }
+    console.log("FOAMY DONE")
+    Qt.quit()
+  }, "the popup body lays out its stops")
+  function stops() {
+    check(shell.view.stops.join(",") === "swap,settings,refresh", "stops are swap, settings (⋯), refresh: " + shell.view.stops.join(","))
+    var before = shell.view.stops
+    shell.tick()
+    check(shell.view.stops !== before, "a clock tick rebuilds the stops array (as in the live popup)")
+  }
+  function pointer() {
+    // Pointer: over Switch direction, then over Refresh, then out of the popup.
+    shell.view.stopHovered("swap")
+    shell.view.stopHovered("refresh")
+    check(body.cursorKey === "refresh", "hover lights Refresh")
+    var keys = shell.ticks()
+    check(steady(keys, "refresh"), "Refresh stays lit while the clock ticks: " + keys.join(" "))
+    shell.view.stopHovered("refresh")
+    shell.view.stopHovered("swap")
+    var keys2 = shell.ticks()
+    check(steady(keys2, "swap"), "Switch direction stays lit while the clock ticks: " + keys2.join(" "))
+  }
+  function keyboard() {
+    // Keyboard: Down from Switch direction to Settings (the ⋯ button), then tick.
+    body.moveRequested(0, 1)
+    check(body.cursorKey === "settings", "Down moves to Settings")
+    var keys3 = shell.ticks()
+    check(steady(keys3, "settings"), "Settings stays lit while the clock ticks: " + keys3.join(" "))
+  }
+  function vanished() {
+    // A stop that disappears (the next train leaves and its notice goes) drops the cursor.
+    body.report = Fixtures.report("route")
+    shell.view.stopHovered("route/station")
+    check(body.cursorKey === "route/station", "hover lights the route notice")
+    body.report = Fixtures.report("normal")
+    check(body.cursorKey === "" && body.heldKey === "", "cursor leaves a stop that is gone: '" + body.cursorKey + "'")
+    shell.tick()
+    check(body.cursorKey === "", "and does not come back on the next tick")
   }
 }
 '''

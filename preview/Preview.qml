@@ -12,7 +12,7 @@ Item {
   required property Item anchorItem
   property var previewStates: ["departures", "delayed", "incidents", "route", "cancelled", "offline", "error", "unconfigured", "schedule", "loading", "cursor", "menu", "menu-outside", "settings", "settings-schedule", "settings-error"]
   property string previewState: "departures"
-  readonly property Item popup: popup
+  readonly property var popup: previewPopup
 
   readonly property string fixture: previewState === "cursor" ? "incidents" : previewState
   readonly property var report: Fixtures.report(fixture)
@@ -20,7 +20,7 @@ Item {
   readonly property var departures: Model.upcoming(report, Fixtures.now, stale)
 
   FoamyPopup {
-    id: popup
+    id: previewPopup
     anchorItem: preview.anchorItem
     bar: preview.bar
     open: true

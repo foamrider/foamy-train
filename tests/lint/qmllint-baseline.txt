@@ -92,9 +92,6 @@ TrainView.qml: unqualified: Unqualified access | text: root.formatNumber(parent.
 TrainView.qml: unqualified: Unqualified access | view: root
 TrainView.qml: unqualified: Unqualified access | view: root
 TrainView.qml: unqualified: Unqualified access | view: root
-preview/BarPreview.qml: id-shadows-member: Id for object FoamyPopup shadows property "popup". Rename one or the other. | readonly property Item popup: popup
-preview/BarPreview.qml: id-shadows-member: Note: Id defined here | id: popup
-preview/BarPreview.qml: incompatible-type: Cannot assign binding of type FoamyPopup to QQuickItem | readonly property Item popup: popup
 preview/BarPreview.qml: missing-property: Member "background" not found on type "QObject" | color: Commons.Color.bar.background
 preview/BarPreview.qml: missing-property: Member "text" not found on type "QObject" | foreground: Commons.Color.bar.text
 preview/BarPreview.qml: property-override: Member "data" shadows member "data" from base type "QQuickItem", use a different name or add a final or override specifier. | readonly property var data: preview.sample(modelData.mode)
@@ -107,9 +104,6 @@ preview/BarPreview.qml: unqualified: Unqualified access | showMinutes: modelData
 preview/BarPreview.qml: unqualified: Unqualified access | stale: modelData.mode === "stale"
 preview/BarPreview.qml: unqualified: Unqualified access | text: modelData.label
 preview/BarPreview.qml: unqualified: Unqualified access | withinSchedule: modelData.mode !== "schedule"
-preview/Preview.qml: id-shadows-member: Id for object FoamyPopup shadows property "popup". Rename one or the other. | readonly property Item popup: popup
-preview/Preview.qml: id-shadows-member: Note: Id defined here | id: popup
-preview/Preview.qml: incompatible-type: Cannot assign binding of type FoamyPopup to QQuickItem | readonly property Item popup: popup
 preview/Preview.qml: unqualified: Unqualified access | departures: preview.departures
 preview/Preview.qml: unqualified: Unqualified access | editingSettings: preview.previewState.indexOf("settings") === 0
 preview/Preview.qml: unqualified: Unqualified access | if (preview.previewState === "cursor") {

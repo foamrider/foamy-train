@@ -14,7 +14,7 @@ Item {
   required property Item anchorItem
   property var previewStates: ["bar"]
   property string previewState: "bar"
-  readonly property Item popup: popup
+  readonly property var popup: previewPopup
   readonly property var modes: [
     {
       label: "On time",
@@ -83,7 +83,7 @@ Item {
   }
 
   FoamyPopup {
-    id: popup
+    id: previewPopup
     anchorItem: preview.anchorItem
     bar: preview.bar
     open: true

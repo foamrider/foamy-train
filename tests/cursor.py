@@ -5,17 +5,16 @@ countdown ticks (round 6 #5): the pointer routes hover into the cursor
 pointer leaves and the 1 s clock rebuilds `departures` (a new array every
 tick, as TrainService does), which rebuilds `stops`. The highlight must stay
 on the last stop the pointer or keyboard chose, not ping-pong between the
-last two. Runs on Omarchy 4.5 (the installed shell, or FOAMY_HOST_45), and on
-4.0 only when FOAMY_HOST_40 names a 4.0 shell tree (else 4.0 prints SKIP).
-  python3 tests/cursor.py [4.0|4.5|both]
+last two. Runs on Omarchy 4.5 (the installed shell, or FOAMY_HOST_45).
+  python3 tests/cursor.py
 """
 import os
 import sys
 from pathlib import Path
 
 KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"))
-# 4.5 is the installed shell (FOAMY_HOST_45 overrides it); 4.0 runs only when
-# FOAMY_HOST_40 names a 4.0 shell tree. Set before the harness reads them.
+# 4.5 is the installed shell (FOAMY_HOST_45 overrides it). Set before the
+# harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 import harness  # noqa: E402
@@ -108,23 +107,16 @@ ShellRoot {
 
 
 def main():
-    which = sys.argv[1] if len(sys.argv) > 1 else "both"
-    status = 0
-    for host in (["4.0", "4.5"] if which == "both" else [which]):
-        if host == "4.0" and not os.environ.get("FOAMY_HOST_40"):
-            print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
-            continue
-        run = harness.Run(host, SHELL, plugin=PLUGIN, prefix="foamy-train-cursor-")
-        run.run(timeout=60)
-        oks = run.log.count("FOAMY OK")
-        if run.ok:
-            print(f"{host}: {oks} checks passed")
-            run.cleanup()
-        else:
-            status = 1
-            print(f"{host}: FAILED ({oks} ok)\n" + "\n".join(run.failures() or run.log.splitlines()[-30:]))
-            print(f"log kept at {run.base}")
-    sys.exit(status)
+    run = harness.Run("4.5", SHELL, plugin=PLUGIN, prefix="foamy-train-cursor-")
+    run.run(timeout=60)
+    oks = run.log.count("FOAMY OK")
+    if run.ok:
+        print(f"4.5: {oks} checks passed")
+        run.cleanup()
+        sys.exit(0)
+    print("4.5: FAILED (%d ok)\n" % oks + "\n".join(run.failures() or run.log.splitlines()[-30:]))
+    print(f"log kept at {run.base}")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

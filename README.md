@@ -212,5 +212,4 @@ FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5 
 ```
 
 The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
-(`FOAMY_HOST_45` picks another 4.5 tree). They also run on 4.0 when
-`FOAMY_HOST_40` names a 4.0 shell tree; otherwise they print a SKIP line for it.
+(`FOAMY_HOST_45` picks another 4.5 tree).

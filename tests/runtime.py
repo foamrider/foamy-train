@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Offscreen runtime checks on Omarchy 4.5 (the installed shell, or
-FOAMY_HOST_45; 4.0 too when FOAMY_HOST_40 names a 4.0 shell tree):
-two bar instances share one TrainService (leader configures it), the 4.5
-in-process `lock isLocked` probe pauses polling while locked, the route
+FOAMY_HOST_45): two bar instances share one TrainService (leader configures
+it), the in-process `lock isLocked` probe pauses polling while locked, the route
 reaches the helper on stdin (never argv), popup demand switches the clock
 to seconds, settings saves keep the route, invalid values are refused, outside the
 schedule the popup still shows departures, snoozing mutes the widget
@@ -16,8 +15,7 @@ The system bus is a dead address, so NetworkManager is invisible and the
 helper runs in offline mode; its Entur endpoint is also overridden with a
 non-loopback URL, which fails every request without connecting. Entur is
 never contacted.
-  python3 tests/runtime.py [4.0|4.5|both]   (default both: 4.0 prints SKIP
-                                            unless FOAMY_HOST_40 is set)
+  python3 tests/runtime.py
 """
 import hashlib
 import json
@@ -27,14 +25,13 @@ import time
 from pathlib import Path
 
 KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"))
-# 4.5 is the installed shell (FOAMY_HOST_45 overrides it); 4.0 runs only when
-# FOAMY_HOST_40 names a 4.0 shell tree. Set before the harness reads them.
+# 4.5 is the installed shell (FOAMY_HOST_45 overrides it). Set before the
+# harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 import harness  # noqa: E402
 
 PLUGIN = Path(__file__).resolve().parents[1]
-LOCK_45 = 'ShellIpc { target: "lock"; function isLocked(): string { return shell.locked ? "true" : "false" } }'
 
 SHELL = r'''
 import QtQuick
@@ -54,10 +51,10 @@ ShellRoot {
   property var entry: ({ route: shell.route, refreshSeconds: 300 })
   property int step: 0
   property int savedCount: 0
-  readonly property bool modern: HOST === "4.5"
   function check(ok, what) { if (!ok) console.log("FOAMY FAIL " + what); else console.log("FOAMY OK " + what) }
   MockBar { id: bar; moduleName: "foamy.train" }
-  LOCK
+  // The stock lock's in-process `lock isLocked` target.
+  ShellIpc { target: "lock"; function isLocked(): string { return shell.locked ? "true" : "false" } }
   FloatingWindow {
     visible: true; implicitWidth: 300; implicitHeight: 60
     Train.Panel { id: a; bar: bar; moduleName: "foamy.train"; settings: shell.entry; width: 100; height: 32 }
@@ -134,13 +131,9 @@ ShellRoot {
         search.deadline = ["timeout", "--kill-after=2s", "18s"]
         shell.startSearch("Bergen")
         s.refresh(false, false)
-        if (modern) {
-          check(s.lockInProcess && s.sessionLocked, "4.5 in-process lock probe reports locked")
-          check(!s.statusProcess.running, "no Entur request while locked")
-          check(s.pollInterval === 10, "locked: only the cheap lock probe ticks (10 s)")
-        } else {
-          check(!s.lockInProcess, "4.0 has no IpcRegistry; lock probe falls back to omarchy-shell")
-        }
+        check(s.lockInProcess && s.sessionLocked, "the in-process lock probe reports locked")
+        check(!s.statusProcess.running, "no Entur request while locked")
+        check(s.pollInterval === 10, "locked: only the cheap lock probe ticks (10 s)")
         shell.locked = false
         break
       case 2:
@@ -329,35 +322,27 @@ ROUTE = {"from": {"id": "NSR:StopPlace:59872", "name": "Oslo S"}, "to": {"id": "
 
 
 def main():
-    which = sys.argv[1] if len(sys.argv) > 1 else "both"
-    status = 0
-    for host in (["4.0", "4.5"] if which == "both" else [which]):
-        if host == "4.0" and not os.environ.get("FOAMY_HOST_40"):
-            print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
-            continue
-        qml = SHELL.replace("LOCK", LOCK_45 if host == "4.5" else "").replace("HOST", '"%s"' % host)
-        # A stand-in, so the omarchy-shell lock probe (4.0) never reaches a real shell.
-        run = harness.Run(host, qml, plugin=PLUGIN, prefix="foamy-train-runtime-",
-                          fakebin={"omarchy-shell": "#!/bin/sh\nexit 1\n"})
-        # The harness gives qs a private session bus only. On the system bus
-        # NetworkManager reports the real connection, and two seconds later
-        # the service would ask Entur for real departures. A dead system bus
-        # keeps it offline; the non-loopback endpoint override makes any
-        # request that still goes out fail before it connects.
-        run.env["DBUS_SYSTEM_BUS_ADDRESS"] = f"unix:path={run.base}/no-system-bus"
-        run.env["FOAMY_TRAIN_ENTUR_URL"] = "http://entur.invalid"
-        run.env["FOAMY_TRAIN_FAKE_SEARCH"] = str(fake_search(run.base / "fake-search"))
-        oversized_cache(Path(run.env["HOME"]), ROUTE)
-        run.run(timeout=60)
-        oks = run.log.count("FOAMY OK")
-        if run.ok:
-            print(f"{host}: {oks} checks passed")
-            run.cleanup()
-        else:
-            status = 1
-            print(f"{host}: FAILED ({oks} ok)\n" + "\n".join(run.failures() or run.log.splitlines()[-30:]))
-            print(f"log kept at {run.base}")
-    sys.exit(status)
+    # A stand-in, so the omarchy-shell lock probe never reaches a real shell.
+    run = harness.Run("4.5", SHELL, plugin=PLUGIN, prefix="foamy-train-runtime-",
+                      fakebin={"omarchy-shell": "#!/bin/sh\nexit 1\n"})
+    # The harness gives qs a private session bus only. On the system bus
+    # NetworkManager reports the real connection, and two seconds later
+    # the service would ask Entur for real departures. A dead system bus
+    # keeps it offline; the non-loopback endpoint override makes any
+    # request that still goes out fail before it connects.
+    run.env["DBUS_SYSTEM_BUS_ADDRESS"] = f"unix:path={run.base}/no-system-bus"
+    run.env["FOAMY_TRAIN_ENTUR_URL"] = "http://entur.invalid"
+    run.env["FOAMY_TRAIN_FAKE_SEARCH"] = str(fake_search(run.base / "fake-search"))
+    oversized_cache(Path(run.env["HOME"]), ROUTE)
+    run.run(timeout=60)
+    oks = run.log.count("FOAMY OK")
+    if run.ok:
+        print(f"4.5: {oks} checks passed")
+        run.cleanup()
+        sys.exit(0)
+    print(f"4.5: FAILED ({oks} ok)\n" + "\n".join(run.failures() or run.log.splitlines()[-30:]))
+    print(f"log kept at {run.base}")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

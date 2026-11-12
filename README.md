@@ -204,7 +204,7 @@ node --test tests/*.test.cjs
 python3 -m unittest discover -s tests -p 'test_*.py'
 FOAMY_HELPER='["bin/aarch64/foamy-train-helper"]' python3 -m unittest discover -s tests -p 'test_*.py'  # via qemu binfmt
 bash tests/kit-check.sh
-python3 tests/i18n-runtime.py            # live language switching (OMARCHY_PATH picks another tree)
+python3 "$FOAMY_KIT/preview/i18n_runtime.py" .   # the catalogs under a live language switch
 python3 tests/runtime.py                 # offscreen, needs foamy-kit (FOAMY_KIT)
 python3 tests/cursor.py                  # popup cursor vs the 1 s clock (offscreen)
 FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5

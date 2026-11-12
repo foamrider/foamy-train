@@ -126,8 +126,10 @@ ShellRoot {
     s.statusProcess.running = false
     search.deadline = ["/nonexistent/foamy-no-such-command"]
     shell.startSearch("Oslo")
-    // running -> false for a start that failed arrives asynchronously.
-    when(function() { return !search.inFlight }, "the search that can't start ends", step1)
+    // running -> false for a start that failed arrives asynchronously, and
+    // so does the end of a startup fetch stopped above (one that started
+    // before the lock stand-in registered).
+    when(function() { return !search.inFlight && !s.inFlight && !s.loading }, "the search that can't start ends", step1)
   }
   function step1() {
     check(!search.searching, "a search that can't start stops searching")

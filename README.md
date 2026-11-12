@@ -62,8 +62,9 @@ Departures come from Entur's journey planner. To keep requests light:
   when that finds fewer than six direct trains (sparse routes, late evening).
 - Nothing is fetched while the screen is locked. Before each unattended
   check the widget asks the lock screen through the public `lock isLocked`
-  IPC target (answered by Omarchy's lock and by Foamy Lock); opening the
-  popup or pressing Refresh always fetches.
+  IPC target in-process (answered by Omarchy's lock and by Foamy Lock; with
+  neither running, the session counts as unlocked); opening the popup or
+  pressing Refresh always fetches.
 - One request runs per shell, however many monitors show the bar.
 - Each check runs the helper once; it prints one reply and exits, so nothing
   stays running between checks. A reply younger than 30 seconds is served

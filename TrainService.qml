@@ -19,8 +19,9 @@ import "Schedule.js" as Schedule
 // popup is open or the next train is within 30 minutes, 5 minutes when it is
 // within 2 hours, 15 minutes otherwise. Nothing is fetched while the session
 // is locked: before each unattended poll the public `lock isLocked` IPC target
-// is asked (in-process through 4.5's IpcRegistry, else `omarchy-shell`), which
-// both the stock lock and foamy-lock answer with "true" or "false".
+// is asked in-process through the shell's IpcRegistry, where both the stock
+// lock and foamy-lock answer "true" or "false". When no lock target answers,
+// the session counts as unlocked.
 QtObject {
   id: root
 
@@ -106,14 +107,10 @@ QtObject {
 
   // --- session lock ----------------------------------------------------------------
   property bool sessionLocked: false
+  // The last probe reached a lock target (false: none answers, so unlocked).
   property bool lockInProcess: false
-  property bool lockProbeAvailable: true
-  property int lockProbeFailures: 0
-  property bool lockForce: false
-  // generation when the omarchy-shell probe started; a newer one (route,
-  // schedule, network or membership change) discards the probe's fetch.
-  property int lockGeneration: 0
-  readonly property int lockProbeSeconds: lockInProcess ? 10 : 60
+  // While locked, only this cheap in-process probe ticks.
+  readonly property int lockProbeSeconds: 10
 
   readonly property int pollInterval: Model.pollInterval(refreshSeconds, {
     open: demanded, locked: sessionLocked, lockSeconds: lockProbeSeconds, report: report, now: nowEpoch
@@ -183,32 +180,22 @@ QtObject {
 
   function refresh(force, present) {
     if (!canFetch()) return
-    if (statusProcess.running || lockProbing) {
+    if (statusProcess.running) {
       pendingRefresh = true
       pendingForce = pendingForce || force
       return
     }
-    if (present || demanded) {
-      sessionLocked = false
-    } else if (lockProbeAvailable) {
-      var locked = lockedInProcess()
-      if (locked === null) {
-        lockForce = force
-        lockGeneration = generation
-        startLockProbe()
-        return
-      }
-      if (lockAnswered(locked)) return
-    }
+    if (present || demanded) sessionLocked = false
+    else if (lockAnswered(lockedInProcess())) return
     fetch(force)
   }
 
-  // true/false from the shell's own IpcRegistry (4.5), or null when it can't tell.
+  // The lock target's answer through the shell's own IpcRegistry; false
+  // when no lock target answers.
   function lockedInProcess() {
     var answer = IpcResolver.call(root, "lock", "isLocked", [])
-    if (!answer.ran) return null
-    lockInProcess = true
-    return String(answer.output).trim() === "true"
+    lockInProcess = answer.ran
+    return answer.ran && String(answer.output).trim() === "true"
   }
 
   // Records the lock state; true when the poll must wait.
@@ -219,28 +206,6 @@ QtObject {
     lastAttempt = Date.now() / 1000
     schedule()
     return true
-  }
-
-  // The omarchy-shell probe finished. Polling may have been switched off
-  // meanwhile (schedule ended, last bar gone, route replaced): fetch only if
-  // nothing changed and fetching is still allowed.
-  function lockProbeDone(code, output) {
-    var answer = String(output || "").trim()
-    var locked = false
-    if (code === 0 && (answer === "true" || answer === "false")) {
-      lockProbeFailures = 0
-      locked = lockAnswered(answer === "true")
-    } else {
-      lockProbeFailed()
-    }
-    if (!locked && lockGeneration === generation && canFetch()) fetch(lockForce)
-    Qt.callLater(root.drainRefresh)
-  }
-
-  function lockProbeFailed() {
-    // No lock service answers: stop asking after a few tries and poll as usual.
-    if (++lockProbeFailures >= 3) lockProbeAvailable = false
-    sessionLocked = false
   }
 
   function fetch(force) {
@@ -325,7 +290,7 @@ QtObject {
   function statusObject() {
     return {
       status: report.status, departures: departures.length, stale: stale, locked: sessionLocked,
-      lockProbe: !lockProbeAvailable ? "off" : lockInProcess ? "in-process" : "omarchy-shell",
+      lockProbe: lockInProcess ? "in-process" : "none",
       pollSeconds: pollInterval, withinSchedule: withinSchedule, snoozed: snoozed, networkReady: networkReady
     }
   }
@@ -365,18 +330,6 @@ QtObject {
   }
   property Timer networkRetry: Timer {
     onTriggered: root.refresh(true, false)
-  }
-
-  // Fallback lock probe (4.0, or a lock handler outside IpcRegistry):
-  // FoamyPeerIpc runs a bounded `omarchy-shell lock isLocked`.
-  property bool lockProbing: false
-  property FoamyPeerIpc peer: FoamyPeerIpc {}
-  function startLockProbe() {
-    lockProbing = true
-    peer.call("lock", "isLocked", [], function(ok, output) {
-      root.lockProbing = false
-      root.lockProbeDone(ok ? 0 : 1, output)
-    })
   }
 
   property Process statusProcess: Process {

@@ -142,10 +142,10 @@ ShellRoot {
         if (s.loading) { shell.step--; break }
         s.refresh(false, false)
         check(!s.sessionLocked, "unlocked session polls again")
-        check(s.statusProcess.running || s.lockProbing, "a request starts after unlock")
+        check(s.statusProcess.running, "a request starts after unlock")
         break
       case 3:
-        if (s.loading || s.lockProbing) { shell.step--; break }
+        if (s.loading) { shell.step--; break }
         var argv = s.statusProcess.command.join(" ")
         check(argv.indexOf("--route-stdin") >= 0 && argv.indexOf("NSR:") < 0 && argv.indexOf("Oslo") < 0, "route is not in argv")
         check(argv.indexOf("timeout --kill-after=2s 18s bash -c") === 0 && argv.indexOf("foamy-train-helper") >= 0, "the native helper runs under the widget timeout")
@@ -322,9 +322,7 @@ ROUTE = {"from": {"id": "NSR:StopPlace:59872", "name": "Oslo S"}, "to": {"id": "
 
 
 def main():
-    # A stand-in, so the omarchy-shell lock probe never reaches a real shell.
-    run = harness.Run("4.5", SHELL, plugin=PLUGIN, prefix="foamy-train-runtime-",
-                      fakebin={"omarchy-shell": "#!/bin/sh\nexit 1\n"})
+    run = harness.Run("4.5", SHELL, plugin=PLUGIN, prefix="foamy-train-runtime-")
     # The harness gives qs a private session bus only. On the system bus
     # NetworkManager reports the real connection, and two seconds later
     # the service would ask Entur for real departures. A dead system bus

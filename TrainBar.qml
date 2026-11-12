@@ -23,8 +23,9 @@ Row {
   readonly property bool hasCancellation: departures.some(function(d) {return d.cancelled})
   readonly property bool hasWarning: routeNotices.some(function(n) {return n.kind === "warning"})
     || departures.some(function(d) {return d.notices.some(function(n) {return n.kind === "warning"})})
+  // Route information, or departure information for the train the countdown
+  // shows (other departures' information doesn't count).
   readonly property bool hasInfo: routeNotices.some(function(n) {return n.kind === "info"})
-    // Departure information belongs to the train shown by the countdown.
     || (next !== null && next.notices.some(function(n) {return n.kind === "info"}))
   readonly property bool hasDelay: departures.some(function(d) {return !d.cancelled && d.delay > 0})
   // Theme yellow on the bar surface (the bar has its own background).

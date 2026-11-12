@@ -67,9 +67,8 @@ QtObject {
     printErrors: false
     onLoaded: root.scheduleOverride = Schedule.parseOverride(text(), Date.now())
     // The snooze still applies in memory, but a restart forgets it.
-    onSaveFailed: function(error) {
-      console.warn("foamy-train: couldn't save the snooze state to " + path + " (" + FileViewError.toString(error)
-        + "); it lasts until the shell restarts")
+    onSaveFailed: function (error) {
+      console.warn("foamy-train: couldn't save the snooze state to " + path + " (" + FileViewError.toString(error) + "); it lasts until the shell restarts")
     }
   }
   function toggleSnooze() {
@@ -80,8 +79,7 @@ QtObject {
   }
 
   // --- network -------------------------------------------------------------------
-  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full
-    || Networking.connectivity === NetworkConnectivity.Limited
+  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full || Networking.connectivity === NetworkConnectivity.Limited
   property bool networkSettled: false
   readonly property bool networkReady: networkConnected && networkSettled
   // Every (re)connection waits out the settle delay, not just the first.
@@ -118,14 +116,22 @@ QtObject {
   readonly property int lockProbeSeconds: 10
 
   readonly property int pollInterval: Model.pollInterval(refreshSeconds, {
-    open: demanded, locked: sessionLocked, lockSeconds: lockProbeSeconds, report: report, now: nowEpoch
+    open: demanded,
+    locked: sessionLocked,
+    lockSeconds: lockProbeSeconds,
+    report: report,
+    now: nowEpoch
   })
   readonly property bool stale: Model.stale(report, nowEpoch, !networkReady, Math.max(pollInterval, fetchInterval))
   readonly property var departures: Model.upcoming(report, nowEpoch, stale)
   readonly property var next: Model.next(departures)
-  readonly property bool alert: withinSchedule && !stale && (departures.some(function(d) {
-    return d.cancelled || d.delay > 0 || d.notices.some(function(n) { return n.kind === "warning" })
-  }) || report.routeNotices.some(function(n) { return n.kind === "warning" }))
+  readonly property bool alert: withinSchedule && !stale && (departures.some(function (d) {
+      return d.cancelled || d.delay > 0 || d.notices.some(function (n) {
+        return n.kind === "warning"
+      })
+    }) || report.routeNotices.some(function (n) {
+      return n.kind === "warning"
+    }))
   readonly property bool canPoll: active && configured && !!route && networkReady && live && !helperUnavailable
 
   function configure(config) {
@@ -138,7 +144,8 @@ QtObject {
     language = config.language
     configuredRoute = config.routeJson
     configured = true
-    if (reset) syncRoute()
+    if (reset)
+      syncRoute()
     else if (relabel) {
       generation++
       refresh(true, false)
@@ -155,12 +162,17 @@ QtObject {
     pendingForce = false
     try {
       var parsed = Model.route(JSON.parse(configuredRoute))
-      report = Object.assign(Model.blank(parsed ? "ready" : "unconfigured"), { route: parsed })
+      report = Object.assign(Model.blank(parsed ? "ready" : "unconfigured"), {
+        route: parsed
+      })
     } catch (error) {
-      report = Object.assign(Model.blank("error"), { error: error.message })
+      report = Object.assign(Model.blank("error"), {
+        error: error.message
+      })
     }
     route = report.route
-    if (route) refresh(true, false)
+    if (route)
+      refresh(true, false)
   }
 
   function resetNetworkRetry() {
@@ -169,7 +181,8 @@ QtObject {
   }
 
   function retryNetworkRequest() {
-    if (!networkReady || sessionLocked || !live || helperUnavailable || networkRetries >= 3) return
+    if (!networkReady || sessionLocked || !live || helperUnavailable || networkRetries >= 3)
+      return
     // Bound startup recovery without overlapping the serialized worker.
     networkRetry.interval = 2500 * Math.pow(2, networkRetries++)
     networkRetry.restart()
@@ -184,14 +197,17 @@ QtObject {
   }
 
   function refresh(force, present) {
-    if (!canFetch()) return
+    if (!canFetch())
+      return
     if (statusProcess.running) {
       pendingRefresh = true
       pendingForce = pendingForce || force
       return
     }
-    if (present || demanded) sessionLocked = false
-    else if (lockAnswered(lockedInProcess())) return
+    if (present || demanded)
+      sessionLocked = false
+    else if (lockAnswered(lockedInProcess()))
+      return
     fetch(force)
   }
 
@@ -206,7 +222,8 @@ QtObject {
   // Records the lock state; true when the poll must wait.
   function lockAnswered(locked) {
     sessionLocked = locked
-    if (!locked) return false
+    if (!locked)
+      return false
     resetNetworkRetry()
     lastAttempt = Date.now() / 1000
     schedule()
@@ -214,16 +231,14 @@ QtObject {
   }
 
   function fetch(force) {
-    if (!canFetch()) return
+    if (!canFetch())
+      return
     requestedGeneration = generation
     requestOffline = !networkReady
     lastAttempt = Date.now() / 1000
     fetchInterval = pollInterval
     statusProcess.requestInput = JSON.stringify(route) + "\n"
-    statusProcess.command = deadline.concat(FoamyNative.command(pluginDir, "foamy-train-helper",
-      ["--language", language === "no" || language === "nb" ? "nb" : "en",
-       "--hours", String(lookAheadHours), "--route-stdin"]
-      .concat(force ? ["--force"] : []).concat(requestOffline ? ["--offline"] : [])))
+    statusProcess.command = deadline.concat(FoamyNative.command(pluginDir, "foamy-train-helper", ["--language", language === "no" || language === "nb" ? "nb" : "en", "--hours", String(lookAheadHours), "--route-stdin"].concat(force ? ["--force"] : []).concat(requestOffline ? ["--offline"] : [])))
     statusProcess.stdinEnabled = true
     inFlight = true
     statusProcess.running = true
@@ -234,10 +249,12 @@ QtObject {
   // no exited(), only running -> false). The running -> false that follows
   // exited() finds nothing in flight. Queued refreshes drain either way.
   function finishFetch(code, started) {
-    if (!inFlight) return
+    if (!inFlight)
+      return
     inFlight = false
     try {
-      if (requestedGeneration !== generation) return
+      if (requestedGeneration !== generation)
+        return
       if (started && FoamyNative.unavailable(code)) {
         helperFailed()
         return
@@ -248,8 +265,10 @@ QtObject {
         return
       }
       report = Model.parse(statusOutput.text)
-      if (["network_error", "http_error"].indexOf(report.errorCode) >= 0) retryNetworkRequest()
-      else resetNetworkRetry()
+      if (["network_error", "http_error"].indexOf(report.errorCode) >= 0)
+        retryNetworkRequest()
+      else
+        resetNetworkRetry()
     } catch (e) {
       fail("Invalid train response.")
     } finally {
@@ -285,7 +304,8 @@ QtObject {
   }
 
   function drainRefresh() {
-    if (!pendingRefresh) return
+    if (!pendingRefresh)
+      return
     var force = pendingForce
     pendingRefresh = false
     pendingForce = false
@@ -294,9 +314,15 @@ QtObject {
 
   function statusObject() {
     return {
-      status: report.status, departures: departures.length, stale: stale, locked: sessionLocked,
+      status: report.status,
+      departures: departures.length,
+      stale: stale,
+      locked: sessionLocked,
       lockProbe: lockInProcess ? "in-process" : "none",
-      pollSeconds: pollInterval, withinSchedule: withinSchedule, snoozed: snoozed, networkReady: networkReady
+      pollSeconds: pollInterval,
+      withinSchedule: withinSchedule,
+      snoozed: snoozed,
+      networkReady: networkReady
     }
   }
 
@@ -327,7 +353,8 @@ QtObject {
     pendingForce = false
     statusProcess.running = false
   }
-  onSessionLockedChanged: if (!sessionLocked) resetNetworkRetry()
+  onSessionLockedChanged: if (!sessionLocked)
+    resetNetworkRetry()
 
   property Timer pollTimer: Timer {
     repeat: false
@@ -344,8 +371,14 @@ QtObject {
       write(requestInput)
       stdinEnabled = false
     }
-    stdout: StdioCollector { id: statusOutput; waitForEnd: true }
-    onExited: function(code) { root.finishFetch(code, true) }
-    onRunningChanged: if (!running) root.finishFetch(-1, false)
+    stdout: StdioCollector {
+      id: statusOutput
+      waitForEnd: true
+    }
+    onExited: function (code) {
+      root.finishFetch(code, true)
+    }
+    onRunningChanged: if (!running)
+      root.finishFetch(-1, false)
   }
 }

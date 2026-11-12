@@ -23,27 +23,31 @@ Panel {
     return prefs.value(key)
   }
   // The station pair is an object field: Model.route() validates it.
-  readonly property var fields: Schema.fields.concat([{
-    key: "route", type: "object", defaultValue: null,
-    validate: function(value) {
-      try {
-        return Model.route(value) !== null || "Select both stations from search results."
-      } catch (error) {
-        return error.message
+  readonly property var fields: Schema.fields.concat([
+    {
+      key: "route",
+      type: "object",
+      defaultValue: null,
+      validate: function (value) {
+        try {
+          return Model.route(value) !== null || "Select both stations from search results."
+        } catch (error) {
+          return error.message
+        }
       }
     }
-  }])
+  ])
   // Saved values show at once, before the host reflects them back.
   readonly property var effectiveSettings: prefs.effectiveSettings
   readonly property string configuredRoute: JSON.stringify(effectiveSettings && effectiveSettings.route !== undefined ? effectiveSettings.route : null)
   readonly property var config: ({
-    routeJson: configuredRoute,
-    lookAheadHours: preference("lookAheadHours"),
-    refreshSeconds: preference("refreshSeconds"),
-    scheduleEnabled: preference("scheduleEnabled"),
-    week: Schedule.week(effectiveSettings || ({})),
-    language: FoamyI18n.language
-  })
+      routeJson: configuredRoute,
+      lookAheadHours: preference("lookAheadHours"),
+      refreshSeconds: preference("refreshSeconds"),
+      scheduleEnabled: preference("scheduleEnabled"),
+      week: Schedule.week(effectiveSettings || ({})),
+      language: FoamyI18n.language
+    })
 
   readonly property alias editingSettings: settingsState.editing
   readonly property string settingsError: prefs.error !== "" ? FoamyI18n.t(prefs.error) : ""
@@ -51,7 +55,10 @@ Panel {
   readonly property bool routeSaving: prefs.busy
   readonly property alias popup: popup
 
-  FoamySettingsState { id: settingsState; panel: root }
+  FoamySettingsState {
+    id: settingsState
+    panel: root
+  }
   FoamyPrefsQueue {
     id: prefs
     bar: root.bar
@@ -69,7 +76,8 @@ Panel {
   onConfigChanged: pushConfig()
   Component.onCompleted: pushConfig()
   function pushConfig() {
-    if (member.isLeader) TrainService.configure(config)
+    if (member.isLeader)
+      TrainService.configure(config)
   }
 
   visible: opened || TrainService.withinSchedule || preference("scheduleOutsideMode") !== "hide" || !TrainService.route
@@ -84,12 +92,18 @@ Panel {
   }
   function swapDirection() {
     var current = TrainService.route
-    if (current && !routeSaving) save("route", { from: current.to, to: current.from })
+    if (current && !routeSaving)
+      save("route", {
+        from: current.to,
+        to: current.from
+      })
   }
   function save(key, next) {
     // Store the normalized pair (trimmed names, no search labels).
     if (key === "route") {
-      try { next = Model.route(next) } catch (error) {}
+      try {
+        next = Model.route(next)
+      } catch (error) {}
     }
     prefs.save(key, next)
   }
@@ -99,19 +113,38 @@ Panel {
 
   // Later, so this popup's demand is counted first: outside the schedule only
   // an open popup may fetch.
-  onOpenedChanged: if (opened) Qt.callLater(function() { TrainService.refresh(false, true) })
+  onOpenedChanged: if (opened)
+    Qt.callLater(function () {
+      TrainService.refresh(false, true)
+    })
 
   FoamyIpc {
     target: "foamy.train"
     enabled: member.isLeader
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function settings(): void { root.openSettings() }
-    function refresh(): void { TrainService.refresh(true, true) }
-    function swap(): void { root.swapDirection() }
-    function snooze(): void { TrainService.toggleSnooze() }
-    function status(): string { return JSON.stringify(TrainService.statusObject()) }
+    function open(): void {
+      root.open()
+    }
+    function close(): void {
+      root.close()
+    }
+    function toggle(): void {
+      root.toggle()
+    }
+    function settings(): void {
+      root.openSettings()
+    }
+    function refresh(): void {
+      TrainService.refresh(true, true)
+    }
+    function swap(): void {
+      root.swapDirection()
+    }
+    function snooze(): void {
+      TrainService.toggleSnooze()
+    }
+    function status(): string {
+      return JSON.stringify(TrainService.statusObject())
+    }
   }
 
   WidgetButton {
@@ -127,10 +160,7 @@ Panel {
     fixedWidth: root.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
     // The host tooltip has no size limit; the station names (from Entur, up
     // to 160 characters each) are cut to one tooltip line.
-    tooltipText: FoamyI18n.t("Trains")
-      + (TrainService.route ? " · " + FoamyText.tooltip(FoamyI18n.t("%1 → %2", [TrainService.route.from.name, TrainService.route.to.name])) : "")
-      + (TrainService.snoozed ? " · " + FoamyI18n.t("snoozed") : !TrainService.withinSchedule ? " · " + FoamyI18n.t("outside your schedule") : "")
-      + (TrainService.stale ? " · " + FoamyI18n.t("Cached times; live predictions unavailable.") : "")
+    tooltipText: FoamyI18n.t("Trains") + (TrainService.route ? " · " + FoamyText.tooltip(FoamyI18n.t("%1 → %2", [TrainService.route.from.name, TrainService.route.to.name])) : "") + (TrainService.snoozed ? " · " + FoamyI18n.t("snoozed") : !TrainService.withinSchedule ? " · " + FoamyI18n.t("outside your schedule") : "") + (TrainService.stale ? " · " + FoamyI18n.t("Cached times; live predictions unavailable.") : "")
     TrainBar {
       id: barContent
       anchors.centerIn: parent
@@ -147,9 +177,11 @@ Panel {
       routeNotices: TrainService.report.routeNotices
       nowEpoch: TrainService.nowEpoch
     }
-    onPressed: function(b) {
-      if (b === Qt.RightButton) root.openSettings()
-      else root.toggle()
+    onPressed: function (b) {
+      if (b === Qt.RightButton)
+        root.openSettings()
+      else
+        root.toggle()
     }
   }
 
@@ -185,9 +217,13 @@ Panel {
         onRefreshRequested: TrainService.refresh(true, true)
         onSwapRequested: root.swapDirection()
         onSnoozeRequested: TrainService.toggleSnooze()
-        onSaveRequested: function(key, value) { root.save(key, value) }
+        onSaveRequested: function (key, value) {
+          root.save(key, value)
+        }
         onRetryRequested: root.retrySave()
-        onSwitchPanelRequested: function(direction) { root.switchPanel(direction) }
+        onSwitchPanelRequested: function (direction) {
+          root.switchPanel(direction)
+        }
       }
     }
   }

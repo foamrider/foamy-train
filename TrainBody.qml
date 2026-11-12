@@ -31,14 +31,14 @@ PanelKeyCatcher {
   property string settingsError: ""
   property bool retryable: false
 
-  signal closeRequestedByView()
-  signal settingsRequested()
-  signal settingsClosed()
-  signal refreshRequested()
-  signal swapRequested()
-  signal snoozeRequested()
+  signal closeRequestedByView
+  signal settingsRequested
+  signal settingsClosed
+  signal refreshRequested
+  signal swapRequested
+  signal snoozeRequested
   signal saveRequested(string key, var value)
-  signal retryRequested()
+  signal retryRequested
   signal switchPanelRequested(int direction)
 
   implicitWidth: FoamyStyle.popupWidth
@@ -55,8 +55,12 @@ PanelKeyCatcher {
   // is not re-evaluated yet), and the next tick then sends the cursor back
   // there, so it ping-ponged between the last two stops once a second.
   property string heldKey: ""
-  function keyAt(index) { return index >= 0 && index < view.stops.length ? view.stops[index] : "" }
-  function hold() { heldKey = keyAt(cursor.index) }
+  function keyAt(index) {
+    return index >= 0 && index < view.stops.length ? view.stops[index] : ""
+  }
+  function hold() {
+    heldKey = keyAt(cursor.index)
+  }
 
   FoamyCursor {
     id: cursor
@@ -67,19 +71,28 @@ PanelKeyCatcher {
   Connections {
     target: view
     function onStopsChanged() {
-      if (root.heldKey === "") return
+      if (root.heldKey === "")
+        return
       cursor.index = view.stops.indexOf(root.heldKey)
-      if (cursor.index < 0) root.heldKey = ""
+      if (cursor.index < 0)
+        root.heldKey = ""
     }
   }
 
-  onMoveRequested: function(dx, dy) { cursor.move(dy !== 0 ? dy : dx); hold() }
+  onMoveRequested: function (dx, dy) {
+    cursor.move(dy !== 0 ? dy : dx)
+    hold()
+  }
   onActivateRequested: view.activate(root.cursorKey)
   onCloseRequested: root.closeRequestedByView()
-  onTabRequested: function(direction) { root.switchPanelRequested(direction) }
-  onTextKey: function(text) {
-    if (text === "s") root.settingsRequested()
-    else if (text === "r") root.refreshRequested()
+  onTabRequested: function (direction) {
+    root.switchPanelRequested(direction)
+  }
+  onTextKey: function (text) {
+    if (text === "s")
+      root.settingsRequested()
+    else if (text === "r")
+      root.refreshRequested()
   }
 
   onEditingSettingsChanged: {
@@ -92,7 +105,11 @@ PanelKeyCatcher {
       Qt.callLater(root.forceActiveFocus)
     }
   }
-  onVisibleChanged: if (!visible) { cursor.reset(); heldKey = ""; view.band.closeMenu() }
+  onVisibleChanged: if (!visible) {
+    cursor.reset()
+    heldKey = ""
+    view.band.closeMenu()
+  }
 
   // The departures scroller (tests check that cursor stops stay visible).
   readonly property Flickable scroller: scroll
@@ -109,7 +126,9 @@ PanelKeyCatcher {
     flickableDirection: Flickable.VerticalFlick
     onContentHeightChanged: contentY = Math.max(0, Math.min(contentY, contentHeight - height))
     onHeightChanged: contentY = Math.max(0, Math.min(contentY, contentHeight - height))
-    Controls.ScrollBar.vertical: Controls.ScrollBar { policy: Controls.ScrollBar.AsNeeded }
+    Controls.ScrollBar.vertical: Controls.ScrollBar {
+      policy: Controls.ScrollBar.AsNeeded
+    }
 
     TrainView {
       id: view
@@ -125,15 +144,21 @@ PanelKeyCatcher {
       snoozed: root.snoozed
       routeBusy: root.routeSaving
       cursorKey: root.cursorKey
-      onStopHovered: function(key) { cursor.hover(view.stops.indexOf(key)); root.hold() }
-      onRevealRequested: function(item) {
+      onStopHovered: function (key) {
+        cursor.hover(view.stops.indexOf(key))
+        root.hold()
+      }
+      onRevealRequested: function (item) {
         var point = item.mapToItem(view, 0, 0)
         var margin = FoamyStyle.gap
-        if (point.y < scroll.contentY) scroll.contentY = Math.max(0, point.y - margin)
+        if (point.y < scroll.contentY)
+          scroll.contentY = Math.max(0, point.y - margin)
         else if (point.y + item.height > scroll.contentY + scroll.height)
           scroll.contentY = Math.max(0, Math.min(scroll.contentHeight - scroll.height, point.y + item.height - scroll.height + margin))
       }
-      onDetailOpened: function(item) { wheel.ensureVisible(item) }
+      onDetailOpened: function (item) {
+        wheel.ensureVisible(item)
+      }
       onSettingsRequested: root.settingsRequested()
       onSwapRequested: root.swapRequested()
       onSnoozeRequested: root.snoozeRequested()
@@ -142,7 +167,10 @@ PanelKeyCatcher {
   }
 
   // A wheel notch scrolls about three rows, however the mouse splits it.
-  FoamyWheelScroll { id: wheel; target: scroll }
+  FoamyWheelScroll {
+    id: wheel
+    target: scroll
+  }
 
   SettingsPane {
     id: settingsPane
@@ -157,7 +185,9 @@ PanelKeyCatcher {
     routeSaving: root.routeSaving
     error: root.settingsError
     retryable: root.retryable
-    onSaveRequested: function(key, value) { root.saveRequested(key, value) }
+    onSaveRequested: function (key, value) {
+      root.saveRequested(key, value)
+    }
     onRetry: root.retryRequested()
     onBack: root.settingsClosed()
   }

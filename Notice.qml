@@ -19,15 +19,20 @@ FoamyCursorSurface {
   hasCursor: expandable && !!view && view.cursorKey === cursorKey
   implicitHeight: contents.implicitHeight + FoamyStyle.rowPadding * 2
   color: hasCursor ? FoamyPalette.hoverFill : filled ? Qt.alpha(FoamyPalette.text, 0.045) : "transparent"
-  onHasCursorChanged: if (hasCursor && view) view.revealRequested(root)
-  onExpandedChanged: if (expanded && view) view.detailOpened(root)
-  onHovered: if (expandable && view) view.stopHovered(cursorKey)
-  onClicked: if (expandable && view) view.toggle(cursorKey)
+  onHasCursorChanged: if (hasCursor && view)
+    view.revealRequested(root)
+  onExpandedChanged: if (expanded && view)
+    view.detailOpened(root)
+  onHovered: if (expandable && view)
+    view.stopHovered(cursorKey)
+  onClicked: if (expandable && view)
+    view.toggle(cursorKey)
 
   Accessible.role: expandable ? Accessible.Button : Accessible.StaticText
   Accessible.name: notice.summary
   Accessible.description: expanded ? notice.detail : ""
-  Accessible.onPressAction: if (expandable && view) view.toggle(cursorKey)
+  Accessible.onPressAction: if (expandable && view)
+    view.toggle(cursorKey)
 
   Column {
     id: contents
@@ -44,8 +49,7 @@ FoamyCursorSurface {
         Layout.preferredHeight: FoamyStyle.iconSize
         // Information notices keep the announcement (megaphone) shape.
         name: root.notice.kind === "info" ? "megaphone" : root.cancelled ? "cancelled" : "warning"
-        color: root.notice.kind === "info" ? Commons.Color.accent
-               : root.cancelled ? Commons.Color.urgent : FoamyPalette.onSurface(FoamyPalette.warning)
+        color: root.notice.kind === "info" ? Commons.Color.accent : root.cancelled ? Commons.Color.urgent : FoamyPalette.onSurface(FoamyPalette.warning)
       }
       TrainText {
         Layout.fillWidth: true

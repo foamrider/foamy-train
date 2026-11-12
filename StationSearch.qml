@@ -43,7 +43,8 @@ Column {
     input.focusInput()
   }
   function runSearch() {
-    if (process.running) return
+    if (process.running)
+      return
     if (input.text.trim().length < 2 || selected) {
       searching = false
       return
@@ -51,8 +52,7 @@ Column {
     requestedText = input.text
     requestedRevision = revision
     // `--search=` keeps a query that starts with "-" from parsing as an option.
-    process.command = deadline.concat(
-      FoamyNative.command(pluginDir, "foamy-train-helper", ["--search=" + requestedText]))
+    process.command = deadline.concat(FoamyNative.command(pluginDir, "foamy-train-helper", ["--search=" + requestedText]))
     inFlight = true
     process.running = true
   }
@@ -60,7 +60,8 @@ Column {
   // no exited(), only running -> false). Later calls for the same search
   // (the running -> false after exited()) find nothing in flight.
   function finishSearch(code, started) {
-    if (!root.inFlight) return
+    if (!root.inFlight)
+      return
     root.inFlight = false
     // A completed search may belong to a replaced query or a selected result.
     if (root.requestedRevision !== root.revision) {
@@ -78,7 +79,8 @@ Column {
       return
     }
     try {
-      if (code !== 0) throw Error("search failed")
+      if (code !== 0)
+        throw Error("search failed")
       var data = JSON.parse(output.text)
       if (data.status !== "ok") {
         root.error = FoamyI18n.t(data.error || "Station search failed. Try again.")
@@ -114,7 +116,7 @@ Column {
       debounce.restart()
       root.changed()
     }
-    onKeyPressed: function(event) {
+    onKeyPressed: function (event) {
       if (event.key === Qt.Key_Down && resultRepeater.count > 0) {
         resultRepeater.itemAt(0).forceActiveFocus()
         event.accepted = true
@@ -152,7 +154,8 @@ Column {
       Keys.onReturnPressed: choose()
       Keys.onEnterPressed: choose()
       Keys.onSpacePressed: choose()
-      Keys.onDownPressed: if (index + 1 < resultRepeater.count) resultRepeater.itemAt(index + 1).forceActiveFocus()
+      Keys.onDownPressed: if (index + 1 < resultRepeater.count)
+        resultRepeater.itemAt(index + 1).forceActiveFocus()
       Keys.onUpPressed: index > 0 ? resultRepeater.itemAt(index - 1).forceActiveFocus() : input.focusInput()
       TrainText {
         id: resultText
@@ -181,7 +184,10 @@ Column {
       id: output
       waitForEnd: true
     }
-    onExited: function(code) { root.finishSearch(code, true) }
-    onRunningChanged: if (!running) root.finishSearch(-1, false)
+    onExited: function (code) {
+      root.finishSearch(code, true)
+    }
+    onRunningChanged: if (!running)
+      root.finishSearch(-1, false)
   }
 }

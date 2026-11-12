@@ -13,8 +13,12 @@ Rectangle {
   required property string language
   property bool stale: false
   property Item view: null
-  function formatNumber(value) { return FoamyI18n.number(value, 0) }
-  function durationText(minutes) { return Model.duration(minutes, root.language, root.formatNumber) }
+  function formatNumber(value) {
+    return FoamyI18n.number(value, 0)
+  }
+  function durationText(minutes) {
+    return Model.duration(minutes, root.language, root.formatNumber)
+  }
   implicitHeight: body.implicitHeight + (root.departure.notices.length > 0 ? FoamyStyle.sectionGap : FoamyStyle.padding)
   radius: FoamyStyle.radius
   color: Qt.alpha(FoamyPalette.text, 0.05)
@@ -101,10 +105,8 @@ Rectangle {
           }
           TrainText {
             visible: !root.departure.cancelled && !root.stale
-            text: "· " + (root.departure.delay > 0 ? "+" + root.durationText(root.departure.delay)
-                                                    : FoamyI18n.t(root.departure.realtime ? "On time" : "Scheduled"))
-            color: root.departure.delay > 0 ? FoamyPalette.onSurface(FoamyPalette.warning)
-                   : root.departure.realtime ? FoamyPalette.onSurface(FoamyPalette.success) : FoamyPalette.secondaryText
+            text: "· " + (root.departure.delay > 0 ? "+" + root.durationText(root.departure.delay) : FoamyI18n.t(root.departure.realtime ? "On time" : "Scheduled"))
+            color: root.departure.delay > 0 ? FoamyPalette.onSurface(FoamyPalette.warning) : root.departure.realtime ? FoamyPalette.onSurface(FoamyPalette.success) : FoamyPalette.secondaryText
             font.pixelSize: FoamyStyle.font.bodySmall
             wrapMode: Text.NoWrap
           }

@@ -198,9 +198,13 @@ Tests (Python 3, node and the openssl CLI are needed for development only).
 The Python tests run the helper as a process against a local fake Entur
 (`tests/fake_entur.py`); `FOAMY_TRAIN_ENTUR_URL`, a loopback base URL, is the
 helper's test-only endpoint override, and `FOAMY_HELPER` (a JSON argv prefix)
-picks the binary:
+picks the binary. `tests/validate.sh` runs every check and linter and then
+`tests/suite.sh`, which runs the tests below (`--ci`: node and the helper
+tests only; `--fast`: no offscreen runtime tests):
 
 ```sh
+mise install                             # once: the pinned tools
+tests/validate.sh                        # everything (--ci, --fast)
 node --test tests/*.test.cjs
 python3 -m unittest discover -s tests -p 'test_*.py'
 FOAMY_HELPER='["bin/aarch64/foamy-train-helper"]' python3 -m unittest discover -s tests -p 'test_*.py'  # via qemu binfmt

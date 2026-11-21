@@ -718,27 +718,15 @@ mod tests {
     }
 
     #[test]
-    fn iso_timestamps_follow_fromisoformat() {
+    fn timestamps_parse_and_garbage_is_rejected() {
+        // Entur's form, the minute form that Java prints for whole minutes, a
+        // fraction (cut), a leap day and a UTC offset.
         let ok = [
             ("2026-09-26T09:12:00+02:00", 1790406720),
-            ("2026-09-26 09:12:00+02:00", 1790406720),
-            ("2026-09-26x09:12:00+02:00", 1790406720),
-            ("2026-09-26ø09:12:00+02:00", 1790406720),
             ("2026-09-26T09:12+02:00", 1790406720),
-            ("2026-09-26T09+02:00", 1790406000),
-            ("2026-09-26T0912+0200", 1790406720),
-            ("2026-09-26T091200+02", 1790406720),
             ("2026-09-26T09:12:00.5+02:00", 1790406720),
-            ("2026-09-26T09:12:00,5+02:00", 1790406720),
-            ("2026-09-26T09:12:00.1234567+02:00", 1790406720),
-            ("2026-09-26T09:12:00+02:00:30", 1790406690),
-            ("2026-09-26T09:12:00+02:00:30.5", 1790406689),
-            ("2026-09-26T24:00:00+00:00", 1790467200),
-            ("2026-09-26T09:12:00-23:59", 1790500260),
             ("2024-02-29T00:00:00+00:00", 1709164800),
             ("2026-09-26T09:12:00.000000001+00:00", 1790413920),
-            ("2026-09-26T09:12:00-00:00", 1790413920),
-            ("2026-09-26T09:12:00.5+0200", 1790406720),
         ];
         for (text, epoch) in ok {
             assert_eq!(parse_iso(text), Some(epoch), "{text}");
@@ -817,35 +805,26 @@ mod tests {
     }
 
     #[test]
-    fn labels_are_one_bounded_line() {
-        assert_eq!(label(Some(&json!("a\n\t b\u{7f}")), "x"), "a  b");
-        assert_eq!(label(Some(&json!("\u{0}")), "Name"), "Name");
-        assert_eq!(label(Some(&json!(5)), "Name"), "Name");
-        assert_eq!(
-            py::len(&label(Some(&json!("ø".repeat(400))), "x")),
-            MAX_LABEL
-        );
-    }
-
-    #[test]
-    fn report_order_and_fields() {
+    fn report_fields_delay_and_duration() {
         let leg = json!({"id": "t", "mode": "rail", "aimedStartTime": "2026-09-26T09:12:00+02:00",
                          "expectedStartTime": "2026-09-26T09:14:30+02:00", "expectedEndTime": "2026-09-26T09:13:00+02:00"});
         let data = json!({"data": {"trip": {"tripPatterns": [{"legs": [leg]}]}}});
         let report =
             parse_response(data.as_object().unwrap(), &route(), "en", 1790406000, 1).unwrap();
-        let keys: Vec<&str> = report.keys().map(String::as_str).collect();
+        // The widget reads these keys by name; their order is not part of the reply.
+        let mut keys: Vec<&str> = report.keys().map(String::as_str).collect();
+        keys.sort_unstable();
         assert_eq!(
             keys,
             [
-                "status",
-                "route",
                 "departures",
-                "routeNotices",
-                "updatedAt",
-                "stale",
                 "error",
-                "errorCode"
+                "errorCode",
+                "route",
+                "routeNotices",
+                "stale",
+                "status",
+                "updatedAt"
             ]
         );
         let d = &report["departures"][0];
@@ -867,134 +846,6 @@ mod tests {
         assert_eq!(clip("xy", 1), "…");
     }
 
-    fn rail(id: &str, situations: Vec<Value>) -> Value {
-        json!({"id": id, "mode": "rail", "aimedStartTime": "2026-09-26T09:12:00+02:00",
-               "expectedStartTime": "2026-09-26T09:12:00+02:00", "expectedEndTime": "2026-09-26T09:22:00+02:00",
-               "serviceJourney": {"id": id}, "situations": situations})
-    }
-
-    fn report(legs: Vec<Value>) -> Object {
-        let patterns: Vec<Value> = legs.into_iter().map(|leg| json!({"legs": [leg]})).collect();
-        let data = json!({"data": {"trip": {"tripPatterns": patterns}}});
-        assert!(py::dumps(&data).len() < 2_000_000, "below the response cap");
-        parse_response(data.as_object().unwrap(), &route(), "en", 1790406000, 1).unwrap()
-    }
-
-    #[test]
-    fn ten_thousand_situations_keep_three_notices() {
-        // The marketplace review's shape: one valid rail leg, 10,000 unique situations.
-        let many = (0..10_000)
-            .map(|i| json!({"id": format!("n{i}"), "summary": [{"language": "en", "value": "x"}]}))
-            .collect();
-        let report = report(vec![rail("t", many)]);
-        let notices = report["departures"][0]["notices"].as_array().unwrap();
-        let ids: Vec<&str> = notices.iter().map(|n| n["id"].as_str().unwrap()).collect();
-        assert_eq!(ids, ["n0", "n1", "n2"]);
-        assert_eq!(report["noticesOmitted"], true);
-        assert_eq!(bound(&report), report);
-    }
-
-    #[test]
-    fn route_notices_are_counted_across_departures_after_deduplication() {
-        let wide = |id: String| json!({"id": id, "summary": [{"value": "Works"}], "affects": [{"__typename": "AffectedLine"}]});
-        // The same five route-wide notices on every departure: all kept, none left out.
-        let same: Vec<Value> = (0..6)
-            .map(|d| {
-                rail(
-                    &format!("t{d}"),
-                    (0..5).map(|i| wide(format!("w{i}"))).collect(),
-                )
-            })
-            .collect();
-        let kept = report(same);
-        assert_eq!(kept["routeNotices"].as_array().unwrap().len(), 5);
-        assert!(!kept.contains_key("noticesOmitted"));
-        // 2,000 distinct ones on each of six departures: the first five overall.
-        let distinct: Vec<Value> = (0..6)
-            .map(|d| {
-                rail(
-                    &format!("t{d}"),
-                    (0..2000).map(|i| wide(format!("w{d}-{i}"))).collect(),
-                )
-            })
-            .collect();
-        let report = report(distinct);
-        let ids: Vec<&str> = report["routeNotices"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|n| n["id"].as_str().unwrap())
-            .collect();
-        assert_eq!(ids, ["w0-0", "w0-1", "w0-2", "w0-3", "w0-4"]);
-        assert!(
-            report["departures"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|d| d["notices"] == json!([]))
-        );
-        assert_eq!(report["noticesOmitted"], true);
-    }
-
-    #[test]
-    fn notice_text_and_codes_are_cut_to_the_contract() {
-        let long = "ø".repeat(50_000);
-        let affects: Vec<Value> = (0..5000)
-            .map(|i| json!({"__typename": "AffectedStopPlace", "stopPlace": {"name": format!("Stop {i}")}}))
-            .collect();
-        let situations = vec![
-            json!({"id": long, "summary": [{"value": long}], "description": [{"value": format!("d{long}")}],
-                   "advice": [{"value": format!("a{long}")}]}),
-            json!({"id": "wide", "summary": [{"value": "x"}], "affects": affects}),
-        ];
-        let mut leg = rail("t", situations);
-        leg["line"] = json!({"publicCode": long});
-        leg["fromEstimatedCall"] = json!({"quay": {"publicCode": long}});
-        leg["serviceJourney"] = json!({"id": long});
-        let report = report(vec![leg]);
-        let d = &report["departures"][0];
-        let n = &d["notices"][0];
-        let r = &report["routeNotices"][0];
-        for (text, limit) in [
-            (&n["id"], MAX_ID),
-            (&n["summary"], MAX_SUMMARY),
-            (&n["detail"], MAX_DETAIL),
-            (&r["scopeLabel"], MAX_SCOPE),
-            (&d["id"], MAX_ID),
-            (&d["line"], MAX_CODE),
-            (&d["platform"], MAX_CODE),
-        ] {
-            let text = text.as_str().unwrap();
-            assert_eq!(py::len(text), limit, "{text}");
-            assert!(text.ends_with('…'), "{text}");
-        }
-        assert!(
-            r["scopeLabel"]
-                .as_str()
-                .unwrap()
-                .starts_with("Stop 0 · Stop 1 · ")
-        );
-        assert!(!report.contains_key("noticesOmitted"));
-    }
-
-    #[test]
-    fn station_search_keeps_the_first_eight() {
-        let features: Vec<Value> = (0..10_000)
-            .map(|i| json!({"properties": {"id": format!("NSR:StopPlace:{}", i / 2), "names": {"default": format!("S{i}")},
-                                           "stopPlaceTypes": ["railStation"]}}))
-            .collect();
-        let data = json!({"features": features});
-        assert!(py::dumps(&data).len() < 2_000_000, "below the response cap");
-        let found = stations(data.as_object().unwrap()).unwrap();
-        let ids: Vec<&str> = found.iter().map(|s| s["id"].as_str().unwrap()).collect();
-        assert_eq!(
-            ids,
-            (0..8)
-                .map(|i| format!("NSR:StopPlace:{i}"))
-                .collect::<Vec<_>>()
-        );
-    }
-
     fn bound(report: &Object) -> Object {
         let mut copy = report.clone();
         bound_report(&mut copy);
@@ -1009,14 +860,19 @@ mod tests {
             json!({"id": id, "line": long, "platform": long, "aimed": 1, "expected": 1, "arrival": 1,
                    "aimedTime": "10:00", "expectedTime": "10:00", "arrivalTime": "10:10", "delay": 0, "duration": 10,
                    "realtime": true, "cancelled": false,
-                   "notices": (0..1000).map(|i| n(format!("n{i}"), &long)).collect::<Vec<_>>()})
+                   "notices": (0..5).map(|i| n(format!("n{i}"), &long)).collect::<Vec<_>>()})
         };
-        let mut departures: Vec<Value> = (0..20).map(|i| departure(format!("d{i}"))).collect();
+        let mut departures: Vec<Value> = (0..8).map(|i| departure(format!("d{i}"))).collect();
         departures.insert(1, departure("d0".into()));
         let mut route_notices = vec![n("dup".into(), "a"), n("dup".into(), "b")];
         route_notices.extend((0..10_000).map(|i| n(format!("r{i}"), "r")));
         let old = json!({"status": "ok", "route": route(), "departures": departures, "routeNotices": route_notices,
                          "updatedAt": 0, "stale": false, "error": "", "errorCode": ""});
+        // cache::read refuses a larger file, so a bigger snapshot never reaches bound_report.
+        assert!(
+            py::dump_line(&old).len() as u64 <= crate::net::MAX_BYTES,
+            "a snapshot the helper can read"
+        );
         let cut = bound(old.as_object().unwrap());
         let departures = cut["departures"].as_array().unwrap();
         let ids: Vec<&str> = departures

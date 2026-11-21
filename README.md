@@ -212,6 +212,7 @@ bash tests/kit-check.sh
 python3 "$FOAMY_KIT/preview/i18n_runtime.py" .   # the catalogs under a live language switch
 python3 tests/runtime.py                 # offscreen, needs foamy-kit (FOAMY_KIT)
 python3 tests/cursor.py                  # popup cursor vs the 1 s clock (offscreen)
+python3 tests/states.py                  # what the bar and the popup show in each state (offscreen)
 FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5
 FOAMY_HOST_45=/usr/share/omarchy/shell foamy-kit/preview/render.py . --host 4.5 --preview preview/BarPreview.qml
 ```

@@ -97,6 +97,9 @@ ShellRoot {
     check(body.cursorKey === "", "cursor leaves a stop that is gone: '" + body.cursorKey + "'")
     shell.tick()
     check(body.cursorKey === "", "and does not come back on the next tick")
+    // The stop comes back in a later report: the cursor must not light it by itself.
+    body.report = Fixtures.report("route")
+    check(body.cursorKey === "", "nor when the stop comes back: '" + body.cursorKey + "'")
   }
 }
 """

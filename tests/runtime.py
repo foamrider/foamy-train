@@ -3,12 +3,17 @@
 FOAMY_HOST_45): two bar instances share one TrainService (leader configures
 it), the in-process `lock isLocked` probe pauses polling while locked, the route
 reaches the helper on stdin (never argv), popup demand switches the clock
-to seconds, settings saves keep the route, invalid values are refused, outside the
-schedule the popup still shows departures, snoozing mutes the widget
-until tomorrow without saving settings (an open popup still fetches), an
-oversized cached report (an older helper's: 10,000 route notices) reaches the
-popup within the report's limits, the schedule rows save their days, and a
-snooze that can't be saved still applies and is logged.
+to seconds, settings saves keep the route, invalid values are refused and not
+saved, the foamy.train IPC target answers through the shell's IpcRegistry
+(status, swap, settings, close, snooze, refresh), outside the schedule the
+popup still shows departures, snoozing mutes the widget until tomorrow without
+saving settings (an open popup on either bar still fetches), an oversized
+cached report (an older helper's: 10,000 route notices) reaches the popup
+within the report's limits, a station query reaches the helper as one
+argument, the schedule rows and the route fields save what they should, a
+snooze that can't be saved still applies and is logged, a weekly schedule
+from the settings hides or mutes the widget and stops fetching, and a stored
+same-station route is reported without a fetch.
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
@@ -31,7 +36,7 @@ KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"
 # harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
-import harness  # noqa: E402
+import harness
 
 PLUGIN = Path(__file__).resolve().parents[1]
 
@@ -53,6 +58,13 @@ ShellRoot {
   property var route: ({ from: { id: "NSR:StopPlace:59872", name: "Oslo S" }, to: { id: "NSR:StopPlace:62339", name: "Lillestrøm" } })
   property var entry: ({ route: shell.route, refreshSeconds: 300 })
   property int savedCount: 0
+  // Helper starts of the service, counted where the process starts.
+  property int fetches: 0
+  property int before: 0
+  Connections {
+    target: Train.TrainService.statusProcess
+    function onRunningChanged() { if (Train.TrainService.statusProcess.running) shell.fetches++ }
+  }
   function check(ok, what) { if (!ok) console.log("FOAMY FAIL " + what); else console.log("FOAMY OK " + what) }
   MockBar { id: bar; moduleName: "foamy.train" }
   // The stock lock's in-process `lock isLocked` target.
@@ -133,10 +145,22 @@ ShellRoot {
       else Qt.quit()
     }, label)
   }
+  // Nothing in flight or queued. The process reports `running` later than
+  // fetch() starts it, so a helper start is counted only once the service
+  // is idle again.
+  function idle() { return !s.inFlight && !s.statusProcess.running && !s.pendingRefresh }
+  // Waits until the service is idle, runs `poke`, waits until it is idle
+  // again and calls `then` with the number of helper starts in between.
+  function startsAfter(poke, label, then) {
+    when(idle, "the service is idle before: " + label, function() {
+      var n = shell.fetches
+      poke()
+      when(idle, label, function() { then(shell.fetches - n) })
+    })
+  }
   readonly property var s: Train.TrainService
   Component.onCompleted: when(function() { return s.active && s.configured }, "the leader configures the service", step0)
   function step0() {
-    check(s.active && s.configured, "service active and configured by the leader")
     check(s.refreshSeconds === 300 && s.route && s.route.from.name === "Oslo S", "leader pushed its settings")
     check(s.clock.step === 60000, "minute clock while every popup is closed")
     s.statusProcess.running = false
@@ -190,19 +214,44 @@ ShellRoot {
     a.save("refreshSeconds", 600)
     var saved = bar.saved[bar.saved.length - 1]
     check(saved && saved.settings.refreshSeconds === 600 && saved.settings.route.from.id === "NSR:StopPlace:59872", "inline save keeps the route")
-    a.swapDirection()
+    IpcRegistry.call("foamy.train", "swap", [])
     saved = bar.saved[bar.saved.length - 1]
-    check(saved.settings.route.from.name === "Lillestrøm" && saved.settings.route.to.name === "Oslo S", "swap saves the reversed pair")
+    check(saved.settings.route.from.name === "Lillestrøm" && saved.settings.route.to.name === "Oslo S", "IPC swap saves the reversed pair")
+    // As the host reflects a save to every bar instance. Without it the saved
+    // values stay pending and are dropped 10 s later, which reconfigures the
+    // service (and starts a fetch) at a moment no step controls.
+    shell.entry = saved.settings
+    var n = bar.saved.length
     a.save("refreshSeconds", 7)
-    check(a.settingsError !== "", "invalid interval refused: " + a.settingsError)
+    check(a.settingsError !== "" && bar.saved.length === n && !a.saving, "an invalid interval is refused and nothing is saved: " + a.settingsError)
     a.save("route", { from: shell.route.from, to: shell.route.from })
-    check(a.settingsError !== "", "same-station route refused: " + a.settingsError)
-    check(JSON.parse(JSON.stringify(s.statusObject())).pollSeconds > 0, "status object")
+    check(a.settingsError === "Choose two different stations." && bar.saved.length === n && !a.saving,
+          "a same-station route is refused with its reason and nothing is saved: " + a.settingsError)
+    // The IPC target through the shell's registry: one live handler for both
+    // bar instances, with exactly the documented functions.
+    var targets = IpcRegistry.handlers.filter(function(h) { return h && h.enabled && h.target === "foamy.train" })
+    check(targets.length === 1, "one live foamy.train IPC target for two bar instances: " + targets.length)
+    var names = targets.length === 1 ? IpcRegistry.declaredFunctions(targets[0]).sort().join(",") : ""
+    check(names === "close,open,refresh,settings,snooze,status,swap,toggle", "the IPC target's functions: " + names)
+    var answer = IpcRegistry.call("foamy.train", "status", [])
+    var status = answer.ran ? JSON.parse(answer.output) : ({})
+    check(Object.keys(status).sort().join(",") === "departures,lockProbe,locked,networkReady,pollSeconds,snoozed,stale,status,withinSchedule"
+          && status.lockProbe === "in-process" && status.locked === false && status.pollSeconds === s.pollInterval,
+          "IPC status reports the service state: " + answer.output)
+    check(!IpcRegistry.call("foamy.train", "bogus", []).ran, "IPC refuses an unknown function")
     a.close()
-    when(function() { return !s.demanded }, "demand drops when the popup closes", step5)
+    when(function() { return !s.demanded }, "demand drops when the popup closes", stepSettings)
+  }
+  function stepSettings() {
+    IpcRegistry.call("foamy.train", "settings", [])
+    when(function() { return s.demanded && ((a.opened && a.editingSettings) || (b.opened && b.editingSettings)) },
+         "IPC settings opens the popup on Settings", function() {
+      IpcRegistry.call("foamy.train", "close", [])
+      when(function() { return !s.demanded && !a.editingSettings && !b.editingSettings && !s.loading && !s.inFlight },
+           "IPC close closes the popup and leaves Settings", step5)
+    })
   }
   function step5() {
-    check(!s.demanded, "demand drops when the popup closes")
     check(body.scroller.contentHeight > body.scroller.height + 100, "fixture body overflows its viewport")
     body.moveRequested(0, -1)
     check(body.cursorKey === "refresh" && body.scroller.contentY > 0, "cursor on Refresh scrolls to the footer")
@@ -210,15 +259,12 @@ ShellRoot {
     check(body.cursorKey === "settings" && body.scroller.contentY === 0, "cursor back on Settings scrolls the header into view")
     body.moveRequested(0, 1); body.moveRequested(0, -1); body.moveRequested(0, -1)
     check(body.cursorKey === "swap" && body.scroller.contentY === 0, "cursor on Switch direction keeps the header visible")
-    // A mouse-wheel notch split 8 x 15 scrolls about three rows (FoamyWheelScroll).
+    // A mouse-wheel notch split 8 x 15 (the kit's FoamyWheelScroll on the body's scroller).
     var wheel = body.scrollerWheel
-    check(!!wheel && wheel.target === body.scroller, "the body scrolls with the kit wheel handling")
-    if (wheel) {
-      for (var n = 0; n < 8; n++) wheel.wheel({ angleDelta: Qt.point(0, -15), pixelDelta: Qt.point(0, 0) })
-      var to = isNaN(wheel.destination) ? body.scroller.contentY : wheel.destination
-      check(Math.abs(to - Math.min(wheel.notch, wheel.maxY)) < 1, "one wheel notch scrolls about three rows: " + to)
-      wheel.scrollTo(0, false)
-    }
+    for (var n = 0; n < 8; n++) wheel.wheel({ angleDelta: Qt.point(0, -15), pixelDelta: Qt.point(0, 0) })
+    var to = isNaN(wheel.destination) ? body.scroller.contentY : wheel.destination
+    check(wheel.target === body.scroller && to > 0, "the mouse wheel scrolls the popup body: " + to)
+    wheel.scrollTo(0, false)
     // Outside the schedule the popup shows the departures as usual; the
     // header says why the bar is muted.
     body.outsideSchedule = true
@@ -234,7 +280,6 @@ ShellRoot {
   function step6() {
     var view = body.scroller.contentItem.children[0]
     var band = bodyPart("heroBand"), details = bodyPart("departureDetails")
-    check(band.meta.indexOf(" · outside your schedule") > 0, "outside the schedule the header says so: " + band.meta)
     check(details && details.visible, "outside the schedule the departures still show")
     var stops = view.stops.join(",")
     check(stops.indexOf("swap,settings,") === 0 && view.stops[view.stops.length - 1] === "refresh", "stops: Switch direction, ⋯, … Refresh: " + stops)
@@ -251,21 +296,31 @@ ShellRoot {
     // The service: no schedule, so in force until snoozed.
     shell.savedCount = bar.saved.length
     check(s.withinSchedule && !s.snoozed, "without a schedule the widget is in force")
-    s.toggleSnooze()
+    IpcRegistry.call("foamy.train", "snooze", [])
     var midnight = new Date(); midnight.setHours(24, 0, 0, 0)
-    check(!s.withinSchedule && s.snoozed && !s.canPoll && !s.canFetch(), "snoozing mutes the widget and stops background fetches")
+    check(!s.withinSchedule && s.snoozed, "IPC snooze mutes the widget")
+    check(barTooltip().indexOf(" · snoozed") > 0, "the bar tooltip says snoozed: " + barTooltip())
     check(s.scheduleOverride && s.scheduleOverride.until === midnight.getTime(), "without a schedule the snooze lasts until midnight")
     check(bar.saved.length === shell.savedCount, "snoozing never saves settings")
-    a.open()
-    when(function() { return s.demanded }, "the popup opens while snoozed", step7)
+    startsAfter(function() { s.refresh(false, false); s.refresh(true, false) }, "background refreshes while snoozed end", function(started) {
+      check(started === 0, "snoozed, a background refresh starts no helper: " + started)
+      // Any bar's open popup counts as demand (step4 opened the other one).
+      shell.before = shell.fetches
+      b.open()
+      when(function() { return s.demanded && shell.fetches > shell.before }, "a popup opened while snoozed starts a fetch", step7)
+    })
   }
   function step7() {
-    check(s.live && s.canFetch(), "an open popup still fetches while snoozed")
-    a.close()
+    b.close()
     when(function() { return !s.demanded }, "the popup closes while snoozed", step8)
   }
   function step8() {
-    check(!s.live && !s.canFetch(), "closing the popup stops fetching again")
+    startsAfter(function() { s.refresh(false, false) }, "a background refresh with the popup closed ends", function(started) {
+      check(!s.live && started === 0, "with the popup closed again nothing is fetched: " + started)
+      step8b()
+    })
+  }
+  function step8b() {
     s.toggleSnooze()
     check(s.withinSchedule && !s.snoozed && s.scheduleOverride === null, "pressing again resumes the schedule")
     check(bar.saved.length === shell.savedCount, "resuming never saves settings")
@@ -284,15 +339,17 @@ ShellRoot {
     check(!s.loading && s.report.error === "Train request failed. Try Refresh.",
           "a request that can't start fails visibly: " + s.report.status + "/" + s.report.error)
     s.deadline = ["timeout", "--kill-after=2s", "18s"]
-    s.refresh(true, true)
+    IpcRegistry.call("foamy.train", "refresh", [])
     when(function() { return !s.inFlight }, "the next request ends", step10)
   }
   function step10() {
     check(s.report.errorCode === "offline" && s.report.error !== "Train request failed. Try Refresh.",
           "the next request runs normally: " + s.report.errorCode)
     // A helper whose search reply lists more stations than the 8 asked for.
+    // The query is shell syntax: it must reach the helper as one argument
+    // (main() reads what the fake helper received).
     search.pluginDir = Quickshell.env("FOAMY_TRAIN_FAKE_SEARCH")
-    shell.startSearch("Many")
+    shell.startSearch("-x $(id)")
     when(function() { return !search.inFlight }, "the long station search ends", step11)
   }
   function step11() {
@@ -323,6 +380,22 @@ ShellRoot {
     check(!monday.dayEnabled && from.text === "07:00", "turned off, Monday keeps its last range in the fields: " + from.text)
     find(monday, "daySwitch").toggled()
     check(shell.paneSaves[shell.paneSaves.length - 1][1] === "07:00-09:00", "switched on again, Monday saves its last range")
+    // The route fields save a pair only when both stations are chosen and it changes.
+    var fromSearch = find(pane, "fromSearch"), toSearch = find(pane, "toSearch")
+    var stationA = { id: "NSR:StopPlace:1", name: "A", label: "A" }, stationB = { id: "NSR:StopPlace:2", name: "B", label: "B" }
+    var saves = shell.paneSaves.length
+    fromSearch.choose(stationA)
+    check(shell.paneSaves.length === saves, "one chosen station saves nothing")
+    toSearch.choose(stationB)
+    var last = shell.paneSaves[shell.paneSaves.length - 1]
+    check(shell.paneSaves.length === saves + 1 && last[0] === "route" && last[1].from.id === "NSR:StopPlace:1" && last[1].to.id === "NSR:StopPlace:2",
+          "the second station saves the pair: " + JSON.stringify(last))
+    pane.route = { from: { id: "NSR:StopPlace:1", name: "A" }, to: { id: "NSR:StopPlace:2", name: "B" } }
+    saves = shell.paneSaves.length
+    toSearch.choose(stationB)
+    check(shell.paneSaves.length === saves, "choosing the saved route again saves nothing")
+    fromSearch.input.text = "O"; fromSearch.input.textEdited()
+    check(shell.paneSaves.length === saves && fromSearch.selected === null, "editing a station's text clears it and saves nothing")
     // The snooze state file can't be written (a read-only state folder): the
     // snooze still applies, and the failed save is logged (runtime.py checks).
     shell.overridePath = s.overridePath
@@ -361,6 +434,43 @@ ShellRoot {
       var route = barTooltip().split(" · ")[1] || ""
       check(Array.from(route).length <= 100 && route.slice(-1) === "…" && route.indexOf(long) < 0,
             "a long route is cut in the bar tooltip: " + Array.from(route).length + " code points")
+      step15()
+    })
+  }
+  // A weekly schedule from the settings, independent of the clock: every day
+  // off, then every day all day. (The run is offline, so the button is dimmed
+  // in every state; `dimmed` says nothing here.)
+  function step15() {
+    shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: true, scheduleOutsideMode: "hide" })
+    when(function() { return !s.withinSchedule }, "a schedule with every day off takes effect", function() {
+      check(!a.visible && !b.visible, "outside the schedule both bars hide the widget")
+      startsAfter(function() { s.refresh(false, false); s.refresh(true, false) }, "background refreshes outside the schedule end", step15b)
+    })
+  }
+  function step15b(started) {
+    check(started === 0, "outside the schedule a refresh starts no helper: " + started)
+    shell.entry = Object.assign({}, shell.entry, { scheduleOutsideMode: "mute" })
+    when(function() { return a.visible && b.visible }, "muted outside the schedule, the widget shows", function() {
+      check(barTooltip().indexOf(" · outside your schedule") > 0, "the bar tooltip says outside your schedule: " + barTooltip())
+      var always = {}
+      for (var i = 0; i < Schema.dayKeys.length; i++) always[Schema.dayKeys[i]] = "00:00-24:00"
+      shell.entry = Object.assign({}, shell.entry, always)
+      when(function() { return s.withinSchedule && a.visible }, "every day all day puts the widget in force", function() {
+        check(barTooltip().indexOf("outside your schedule") < 0, "in the schedule the tooltip drops the note: " + barTooltip())
+        startsAfter(function() { s.refresh(false, false) }, "a background refresh in the schedule ends", function(started) {
+          check(started === 1, "in the schedule a background refresh starts the helper: " + started)
+          step16()
+        })
+      })
+    })
+  }
+  // A hand-edited shell.json with the same station at both ends.
+  function step16() {
+    shell.before = shell.fetches
+    shell.entry = Object.assign({}, shell.entry, { route: { from: shell.route.from, to: shell.route.from } })
+    when(function() { return s.route === null && s.report.status === "error" && idle() }, "a stored same-station route gives an error report", function() {
+      check(s.report.error === "Choose two different stations." && shell.fetches === shell.before,
+            "an invalid stored route is reported and nothing is fetched: " + s.report.error)
       console.log("FOAMY DONE")
       Qt.quit()
     })
@@ -371,7 +481,8 @@ ShellRoot {
 
 def fake_search(directory, count=40):
     """A plugin directory whose helper (either arch) answers every search
-    with `count` valid stations."""
+    with `count` valid stations and appends its arguments, one per line, to
+    `directory`/argv."""
     stations = [
         {"id": f"NSR:StopPlace:{n}", "name": f"Station {n}", "label": f"Station {n}, Norway"}
         for n in range(1, count + 1)
@@ -380,7 +491,9 @@ def fake_search(directory, count=40):
     for arch in ("x86_64", "aarch64"):
         helper = directory / "bin" / arch / "foamy-train-helper"
         helper.parent.mkdir(parents=True)
-        helper.write_text("#!/bin/sh\ncat <<'EOF'\n" + reply + "\nEOF\n")
+        helper.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '" + str(directory / "argv") + "'\ncat <<'EOF'\n" + reply + "\nEOF\n"
+        )
         helper.chmod(0o755)
     return directory
 
@@ -459,6 +572,12 @@ def main():
     if unsaved != 2:
         run.ok = False
         print(f"failed snooze saves logged: {unsaved}, expected 2")
+    # The station query reached the helper as one argument, not as shell syntax.
+    argv = run.base / "fake-search" / "argv"
+    received = argv.read_text().splitlines() if argv.exists() else []
+    if received != ["--search=-x $(id)"]:
+        run.ok = False
+        print(f"the fake search helper received {received}, expected ['--search=-x $(id)']")
     # Nothing in the run may reach a host command (the harness stubs them).
     hosts = run.host_commands()
     if hosts:

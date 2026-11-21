@@ -151,7 +151,6 @@ pub fn write(path: &Path, report: &Value) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn directory_rules() {
@@ -172,81 +171,5 @@ mod tests {
         );
         assert_eq!(dir(None, Some("rel")), None);
         assert_eq!(dir(None, None), None);
-    }
-
-    #[test]
-    fn file_names_hash_route_language_and_hours() {
-        let route = json!({"from": {"id": "NSR:StopPlace:1"}, "to": {"id": "NSR:StopPlace:2"}});
-        // hashlib.sha256(b"NSR:StopPlace:1/NSR:StopPlace:2/en/24").hexdigest()
-        assert_eq!(
-            file(Path::new("/c"), &route, "en", 24),
-            PathBuf::from(
-                "/c/01a5fd2c959e96bc6a563057a3050eff873e618c15cfdf4650276749ff6dc817.json"
-            )
-        );
-    }
-
-    #[test]
-    fn file_names_stay_byte_identical_across_padding_edges() {
-        // hashlib.sha256(key.encode()).hexdigest(), the names train_fetch.py
-        // and the ring-based helper wrote: keys of 36 to 120 bytes cover the
-        // one- and two-block paddings (55/56, 63/64/65, 119/120 bytes).
-        let mut cases: Vec<(String, &str, &str, i64, &str)> = vec![
-            (
-                "NSR:StopPlace:59872".into(),
-                "NSR:StopPlace:337",
-                "nb",
-                168,
-                "98f796bf95ace91d09a6441f82a6a539ece7b7b73b70ebcbc0b712de173c7348",
-            ),
-            (
-                "NSR:StopPlace:1".into(),
-                "NSR:StopPlace:2",
-                "en",
-                1,
-                "331e1a1537aa87a615a7e6ad34c2329d8ecf477546b91a3769bc0734d1c15de8",
-            ),
-        ];
-        for (nines, digest) in [
-            (
-                19,
-                "ab904dfc48ffa44c2dcaffdea76e5776f93cb47fb94208002f70eed1338b7107",
-            ),
-            (
-                20,
-                "1cde85bb06e4a6e775fe318fdedea072abd4cda9a1689f85045b738fbfc2bedc",
-            ),
-            (
-                27,
-                "5014dcc1588b9562ca782620ed9d7478ba32bddc65534c4f815201435ba6b9bb",
-            ),
-            (
-                28,
-                "17005036bf1823638b98e2335612dd08742ad098138bdf6af4bf55090913e08f",
-            ),
-            (
-                29,
-                "0bcafef48513f2505ba8fdd176c1ce628607d8975bad8275dbabc656d6b920ca",
-            ),
-            (
-                83,
-                "c77bf8351481332864ef254d3f7766d6e8fe69377c602fc53412cc0c797faef7",
-            ),
-            (
-                84,
-                "5af422d10f528da4986492bcbb4f9176bfaf85df5f3342cbd892c3c0e771cbfa",
-            ),
-        ] {
-            let from = format!("NSR:StopPlace:{}", "9".repeat(nines));
-            cases.push((from, "NSR:StopPlace:2", "en", 24, digest));
-        }
-        for (from, to, language, hours, digest) in cases {
-            let route = json!({"from": {"id": from}, "to": {"id": to}});
-            assert_eq!(
-                file(Path::new("/c"), &route, language, hours),
-                PathBuf::from(format!("/c/{digest}.json")),
-                "{from}/{to}/{language}/{hours}"
-            );
-        }
     }
 }

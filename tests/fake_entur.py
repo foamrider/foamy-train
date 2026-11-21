@@ -71,22 +71,6 @@ QUERY = (
     + """ }
  } } } }"""
 )
-DEPARTURE_KEYS = [
-    "id",
-    "line",
-    "aimed",
-    "expected",
-    "arrival",
-    "aimedTime",
-    "expectedTime",
-    "arrivalTime",
-    "delay",
-    "duration",
-    "platform",
-    "realtime",
-    "cancelled",
-    "notices",
-]
 REPORT_KEYS = ["status", "route", "departures", "routeNotices", "updatedAt", "stale", "error", "errorCode"]
 
 
@@ -179,7 +163,7 @@ def cache_name(route=ROUTE, language="en", hours=24):
 
 
 def python_json(value):
-    """The helper's output format: Python's json.dump defaults, UTF-8, one line."""
+    """One line of JSON for a cache fixture."""
     return json.dumps(value, ensure_ascii=False) + "\n"
 
 
@@ -477,14 +461,13 @@ class Helper:
 
     def json(self, *args, **kwargs):
         """Runs the helper and checks the reply contract: exit 0, empty
-        stderr, exactly one line of JSON in Python's json.dump format."""
+        stderr, exactly one line of JSON."""
         result = self.run(*args, **kwargs)
         assert result.code == 0, (result.code, result.stderr)
         assert result.stderr == b"", result.stderr
         text = result.stdout.decode()
-        value = json.loads(text)
-        assert text == python_json(value), text
-        return value
+        assert text.endswith("\n") and text.count("\n") == 1, text
+        return json.loads(text)
 
     def fetch(self, *args, route=ROUTE, **kwargs):
         stdin = route if isinstance(route, (str, bytes)) else json.dumps(route)

@@ -41,31 +41,20 @@ function fixture(lock) {
     pluginDir: "/fixture", helperUnavailable: false, FoamyNative, report: { status: "ready", updatedAt: 0 },
     language: "en", lookAheadHours: 24, lastAttempt: 0,
     lockInProcess: false, pendingRefresh: false, pendingForce: false, Math, JSON, String, Date,
-    Qt: { callLater(fn) { c.callLater.push(fn); } }, callLater: [], drainRefresh() {},
+    Qt: { callLater(fn) { c.callLater.push(fn); } }, callLater: [],
     IpcResolver: { call: (context, t, m, a) => {
       assert.equal(JSON.stringify([t, m, a]), JSON.stringify(["lock", "isLocked", []]));
       return lock === undefined || lock === null ? { ran: false } : { ran: true, output: String(lock) };
     } },
-  }, ["canFetch", "refresh", "fetch", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "helperFailed", "fail", "finishFetch"]);
+  }, ["canFetch", "refresh", "fetch", "schedule", "retryNetworkRequest", "resetNetworkRetry", "lockedInProcess", "lockAnswered", "helperFailed", "fail", "finishFetch", "drainRefresh"]);
   // The service's `live` binding: the schedule is in force or a popup is open.
   Object.defineProperty(c, "live", { get() { return c.withinSchedule || c.demanded; } });
   return c;
 }
-test("offline startup loads cache only; the route goes to stdin, never argv", () => {
-  const c = fixture(false);
-  c.refresh(true, false);
-  assert.ok(c.statusProcess.command.includes("--offline"));
-  assert.ok(c.statusProcess.command.includes("--route-stdin"));
-  assert.equal(c.statusProcess.command.join(" ").includes("NSR:"), false);
-  assert.deepEqual(JSON.parse(c.statusProcess.requestInput), c.route);
-  c.statusProcess.running = false; c.networkReady = true;
-  c.refresh(true, false);
-  assert.equal(c.statusProcess.command.includes("--offline"), false);
-  assert.equal(c.requestedGeneration, 7);
-});
 test("the native helper runs under the same timeout with the route on stdin", () => {
   const c = fixture(false); c.networkReady = true;
   c.refresh(true, true);
+  assert.deepEqual(JSON.parse(c.statusProcess.requestInput), c.route);
   assert.deepEqual(Array.from(c.statusProcess.command), ["timeout", "--kill-after=2s", "18s",
     ...FoamyNative.command("/fixture", "foamy-train-helper", ["--language", "en", "--hours", "24", "--route-stdin", "--force"])]);
   c.language = "no"; c.lookAheadHours = 3; c.networkReady = false; c.statusProcess.running = false;
@@ -84,27 +73,51 @@ test("an unavailable helper (exit 126/127) is reported once and never retried", 
   assert.equal(c.statusProcess.running, false);
   assert.equal(c.networkRetry.starts, 0);
 });
-test("each fetch ends once: exited, then the running -> false that follows", () => {
-  const reply = JSON.stringify(Object.assign(Model.blank("ok"), { updatedAt: 1 }));
+// Ends one fetch the way Quickshell does: exited(code), then running -> false
+// (for a start that failed only the second). Returns and clears the callbacks
+// the service queued with Qt.callLater.
+function finish(c, code, stdout) {
+  c.statusOutput.text = stdout;
+  c.statusProcess.running = false;
+  if (code !== null) c.finishFetch(code, true);
+  c.finishFetch(-1, false);
+  return c.callLater.splice(0);
+}
+test("how a fetch ends: the report, the retry and the queue", () => {
+  const ok = JSON.stringify({ ...Model.blank("ok"), updatedAt: 1 });
+  const reply = code => JSON.stringify({ ...Model.blank("error"), error: "x", errorCode: code });
+  const failed = "Train request failed. Try Refresh.";
+  // [outcome, exit code (null: the start failed), stdout, report.error, retry armed]
+  const rows = [
+    ["an ok reply", 0, ok, "", false],
+    ["a network error", 0, reply("network_error"), "x", true],
+    ["an HTTP error", 0, reply("http_error"), "x", true],
+    ["offline", 0, reply("offline"), "x", false],
+    ["an invalid Entur answer", 0, reply("invalid_response"), "x", false],
+    ["a reply that is not a report", 0, "not json", "Invalid train response.", false],
+    ["the deadline killed it", 124, "", failed, true],
+    ["the start failed", null, "", failed, true],
+  ];
+  for (const [name, code, stdout, error, armed] of rows) {
+    const c = fixture(false); c.networkReady = true;
+    c.refresh(true, true);
+    assert.equal(c.statusProcess.running, true, name);
+    // A refresh queued behind the fetch runs once it ends, however it ends.
+    c.refresh(true, true);
+    const queued = finish(c, code, stdout);
+    assert.equal(c.report.error, error, name);
+    assert.equal(c.networkRetry.running, armed, name + ": retry armed");
+    assert.equal(queued.length, 1, name + ": the end runs once");
+    queued.forEach(fn => fn());
+    assert.equal(c.statusProcess.running, true, name + ": the queued refresh starts");
+  }
+  // Earlier departures stay, marked stale, when a reply is not a report.
   const c = fixture(false); c.networkReady = true;
+  c.report = { ...Model.blank("ok"), updatedAt: 5, departures: [{ id: "a" }] };
   c.refresh(true, true);
-  assert.equal(c.inFlight, true);
-  c.statusOutput.text = reply; c.statusProcess.running = false;
-  c.finishFetch(0, true); c.finishFetch(-1, false);
-  assert.equal(c.report.status, "ok");
-  assert.equal(c.report.error, "");
-  assert.equal(c.callLater.length, 1, "the queue drains once");
-});
-test("a fetch that never starts reports failure and drains the queue", () => {
-  const c = fixture(false); c.networkReady = true;
-  c.refresh(true, true); c.pendingRefresh = true;
-  c.statusProcess.running = false; c.finishFetch(-1, false);
-  assert.equal(c.inFlight, false);
-  assert.equal(c.report.status, "error");
-  assert.equal(c.report.error, "Train request failed. Try Refresh.");
-  assert.equal(c.networkRetry.starts, 1, "the usual bounded retry");
-  assert.equal(c.callLater.length, 1);
-  assert.equal(c.callLater[0], c.drainRefresh);
+  finish(c, 0, "{}");
+  assert.deepEqual([c.report.status, c.report.stale, c.report.departures.length, c.report.error],
+    ["stale", true, 1, "Invalid train response."]);
 });
 test("a fetch for a replaced route or setting is dropped", () => {
   const c = fixture(false); c.networkReady = true;
@@ -115,10 +128,19 @@ test("a fetch for a replaced route or setting is dropped", () => {
   assert.equal(c.callLater.length, 1);
 });
 test("a reconnect during an active worker queues one forced refresh", () => {
-  const c = fixture(false); c.statusProcess.running = true; c.networkReady = true;
+  const ok = JSON.stringify({ ...Model.blank("ok"), updatedAt: 1 });
+  const c = fixture(false); c.networkReady = true;
+  c.refresh(false, true);
+  const first = c.statusProcess.command;
+  assert.equal(first.includes("--force"), false);
+  // A forced reconnect refresh and a poll arrive while the helper runs.
   c.refresh(true, false); c.refresh(false, false);
-  assert.equal(c.pendingRefresh, true); assert.equal(c.pendingForce, true);
-  assert.equal(c.statusProcess.command, undefined);
+  assert.equal(c.statusProcess.command, first, "no second helper while one runs");
+  finish(c, 0, ok).forEach(fn => fn());
+  assert.equal(c.statusProcess.running, true, "the queued refresh starts");
+  assert.ok(c.statusProcess.command.includes("--force"), "and it is forced");
+  finish(c, 0, ok).forEach(fn => fn());
+  assert.equal(c.statusProcess.running, false, "it ran once");
 });
 test("a locked session (in-process probe) skips Entur and keeps probing", () => {
   const c = fixture(true); c.networkReady = true;
@@ -166,19 +188,21 @@ test("the poll timer waits for the rest of the current interval", () => {
   c.canPoll = false; c.schedule();
   assert.equal(c.pollTimer.running, false);
 });
-test("fetch itself refuses when polling is off", () => {
-  const c = fixture(false); c.withinSchedule = false;
-  c.fetch(true);
-  assert.equal(c.statusProcess.running, false);
-});
-test("outside the schedule an open popup still fetches, like Zendesk", () => {
-  const c = fixture(false); c.withinSchedule = false; c.demanded = true; c.networkReady = true;
-  c.refresh(false, true);
-  assert.equal(c.statusProcess.running, true);
-  assert.match(qml, /readonly property bool live: withinSchedule \|\| demanded/);
-});
-test("every reconnection waits out the network settle delay", () => {
-  // Handlers are not functions; check the declaration the singleton relies on.
-  assert.match(qml, /onNetworkConnectedChanged:\s*networkSettled = false/);
-  assert.match(qml, /running: root\.networkConnected && !root\.networkSettled/);
+test("only a shown, configured widget in force or with an open popup fetches", () => {
+  // [state, fetches]
+  const rows = [
+    [{}, true],
+    [{ withinSchedule: false }, false],
+    [{ withinSchedule: false, demanded: true }, true],
+    [{ active: false }, false],
+    [{ route: null }, false],
+    [{ configured: false }, false],
+    [{ helperUnavailable: true }, false],
+  ];
+  for (const [state, fetches] of rows) {
+    const c = fixture(false); c.networkReady = true;
+    Object.assign(c, state);
+    c.refresh(true, false);
+    assert.equal(c.statusProcess.running, fetches, JSON.stringify(state));
+  }
 });

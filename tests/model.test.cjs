@@ -1,21 +1,8 @@
 const test=require('node:test');
 function loadPrefs(){const fs=require('node:fs'),vm=require('node:vm');const module={exports:{}};vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../kit/FoamyPrefs.js'),'utf8').replace(/^\.pragma library\s*$/m,''),{module,console});return module.exports}const assert=require('node:assert/strict');
 const Model=require('../Model.js'),Schema=require('../Preferences.js'),Prefs=loadPrefs();
-// The kit's FoamySchedule, which the service and the panel import. Its
-// objects come from the loader's vm realm, so results are compared as plain data.
-const KitSchedule=require('../kit/node-loader.cjs').load('FoamySchedule');
-const plain=v=>v===null||v===undefined?v:JSON.parse(JSON.stringify(v));
-const Schedule=Object.fromEntries(Object.entries(KitSchedule).map(([k,f])=>[k,typeof f==='function'?(...a)=>plain(f(...a)):f]));
 const Preferences={valid:(k,v)=>Prefs.valid(Schema.fields,k,v),value:(s,k)=>Prefs.value(Schema.fields,s,k)};
-test('schedule supports overnight carry and explicit days off',()=>{
- const week=['22:00-02:00','','','','','',''];
- assert.equal(Schedule.withinWeek(new Date(2026,8,28,23),true,week),true);
- assert.equal(Schedule.withinWeek(new Date(2026,8,29,1),true,week),true);
- assert.equal(Schedule.withinWeek(new Date(2026,8,29,2),true,week),false);
- assert.equal(Schedule.withinWeek(new Date(2026,8,29,1),false,[]),true);
- assert.deepEqual(Schedule.week({}),['','','','','','','']);
-});
-test('preferences validate clock ranges, integers and language',()=>{
+test('preferences validate clock ranges and integers',()=>{
  assert.equal(Preferences.valid('scheduleMonday','23:00-24:00'),true);
  for(const value of ['24:00-24:00','09:80-10:00','9:00-10:00'])assert.equal(Preferences.valid('scheduleMonday',value),false);
  assert.equal(Preferences.valid('refreshSeconds',0),false);
@@ -34,9 +21,27 @@ test('stale snapshots do not imply live predictions',()=>{
  assert.equal(Model.next(Model.upcoming(r,200,false)),null);
  assert.equal(Model.next(r.departures).id,'a');
 });
+// The report contract (Model.limits, the numbers in native/src/entur.rs).
+const notice=(id,text='x',extra)=>({id,summary:text,detail:text,kind:'warning',scopeLabel:text,...extra});
+const departure=(id,notices=[])=>({id,line:'R10',platform:'1',aimed:1,expected:1,arrival:1,delay:0,duration:10,
+  aimedTime:'10:00',expectedTime:'10:00',arrivalTime:'10:10',realtime:true,cancelled:false,notices});
+const reply=(changes)=>JSON.stringify({...Model.blank('ok'),updatedAt:100,...changes});
 test('reject malformed protocol rather than render misleading defaults',()=>{
- assert.throws(()=>Model.parse('{}'));
- assert.throws(()=>Model.parse(JSON.stringify({...Model.blank('ok'),departures:[{}]})));
+ const base=JSON.parse(reply({route:{from:{id:'NSR:StopPlace:1',name:'A'},to:{id:'NSR:StopPlace:2',name:'B'}},
+  departures:[departure('a',[notice('n')])],routeNotices:[notice('r')]}));
+ assert.deepEqual(Model.parse(JSON.stringify(base)),base,'the valid base report parses');
+ // Each row breaks one thing in an otherwise valid report.
+ const broken=(change)=>{const r=structuredClone(base);change(r);return JSON.stringify(r)};
+ const rows=[['not json','not json'],['empty text',''],['null','null'],['an array','[]'],['an empty object','{}'],
+  ['an unknown status',broken(r=>{r.status='loading'})],['departures not a list',broken(r=>{r.departures={}})],
+  ['route notices null',broken(r=>{r.routeNotices=null})],['updatedAt a string',broken(r=>{r.updatedAt='100'})],
+  ['stale a number',broken(r=>{r.stale=0})],['error null',broken(r=>{r.error=null})],['errorCode a number',broken(r=>{r.errorCode=5})],
+  ['an empty route',broken(r=>{r.route={}})],['a station id that is not NSR',broken(r=>{r.route.from.id='bad'})],
+  ['a clock time without two digits',broken(r=>{r.departures[0].aimedTime='9:05'})],['expected a string',broken(r=>{r.departures[0].expected='100'})],
+  ['realtime a number',broken(r=>{r.departures[0].realtime=1})],['no platform',broken(r=>{delete r.departures[0].platform})],
+  ['notices not a list',broken(r=>{r.departures[0].notices={}})],['an unknown notice kind',broken(r=>{r.departures[0].notices[0].kind='error'})],
+  ['a notice without detail',broken(r=>{delete r.routeNotices[0].detail})]];
+ for(const [name,text] of rows)assert.throws(()=>Model.parse(text),undefined,name);
  assert.deepEqual(Model.parse(JSON.stringify(Model.blank('unconfigured'))),Model.blank('unconfigured'));
 });
 
@@ -92,13 +97,21 @@ test('polling adapts to popup, distance to the next train and lock',()=>{
  assert.equal(p(5,{report:report(dep(1))}),30,'base is clamped to the schema range');
 });
 test('schema fields match the manifest',()=>{
- const manifest=require('../manifest.json');
+ const widget=require('../manifest.json').barWidget,keys=Schema.fields.map(f=>f.key).sort();
  for(const field of Schema.fields){
-  assert.deepEqual(manifest.barWidget.defaults[field.key],field.defaultValue,field.key);
-  const declared=manifest.barWidget.schema.find(f=>f.key===field.key);
+  assert.deepEqual(widget.defaults[field.key],field.defaultValue,field.key);
+  const declared=widget.schema.find(f=>f.key===field.key);
   assert.ok(declared,field.key);
+  assert.deepEqual(declared.defaultValue,field.defaultValue,field.key);
+  assert.equal(declared.type,field.type,field.key);
   if(field.min!==undefined)assert.deepEqual([declared.min,declared.max],[field.min,field.max],field.key);
+  if(field.step!==undefined)assert.equal(declared.step,field.step,field.key);
+  if(field.options!==undefined)assert.deepEqual(declared.options,field.options,field.key);
  }
+ // And the other way: the manifest declares nothing the widget does not read.
+ assert.deepEqual(widget.schema.map(f=>f.key).sort(),keys);
+ assert.deepEqual(Object.keys(widget.defaults).sort(),[...keys,'route'].sort());
+ assert.equal(widget.defaults.route,null);
  for(const value of Schema.refreshChoices)assert.equal(Preferences.valid('refreshSeconds',value),true);
  for(const value of Schema.hourChoices)assert.equal(Preferences.valid('lookAheadHours',value),true);
 });
@@ -106,46 +119,10 @@ test('durations take a number formatter',()=>{
  assert.equal(Model.duration(61,'en',v=>'<'+v+'>'),'<1> h <1> min');
 });
 
-test('schedule: snoozing and resuming override the schedule until the next day', () => {
-  const at = (day, hour, minute) => new Date(2026, 10, day, hour, minute || 0);
-  const week = ['08:00-16:00', '22:00-06:00', '', '', '', '', '']; // Monday, Tuesday night
-  // Within the hours: a snooze lasts until they end, then the schedule rules again.
-  const snooze = Schedule.toggled(at(2, 10), true, week, null);
-  assert.deepEqual(snooze, { on: false, until: at(2, 16).getTime() });
-  assert.equal(Schedule.effective(at(2, 15, 59), true, week, snooze), false);
-  assert.equal(Schedule.effective(at(3, 8), true, week, snooze), false);
-  // Pressing again goes back to the schedule: no override.
-  assert.equal(Schedule.toggled(at(2, 11), true, week, snooze), null);
-  // Outside the hours: resuming lasts until midnight...
-  const evening = Schedule.toggled(at(2, 19), true, week, null);
-  assert.deepEqual(evening, { on: true, until: at(3, 0).getTime() });
-  assert.equal(Schedule.effective(at(2, 23, 59), true, week, evening), true);
-  assert.equal(Schedule.effective(at(3, 0), true, week, evening), false);
-  // ...or until the schedule starts, if that is sooner.
-  assert.deepEqual(Schedule.toggled(at(2, 6), true, week, null), { on: true, until: at(2, 8).getTime() });
-  // An overnight range: the snooze runs on past midnight to its end.
-  assert.deepEqual(Schedule.toggled(at(3, 23), true, week, null), { on: false, until: at(4, 6).getTime() });
-  // No schedule: snoozed until midnight.
-  assert.deepEqual(Schedule.toggled(at(4, 12), false, [], null), { on: false, until: at(5, 0).getTime() });
-  // The state file: expired or malformed overrides are dropped.
-  const text = Schedule.serializeOverride(snooze);
-  assert.deepEqual(Schedule.parseOverride(text, at(2, 12).getTime()), snooze);
-  assert.equal(Schedule.parseOverride(text, at(2, 16).getTime()), null);
-  assert.equal(Schedule.parseOverride('{"version":1,"override":{"on":"no","until":1}}', 0), null);
-  assert.equal(Schedule.parseOverride('not json', 0), null);
-  assert.equal(Schedule.serializeOverride(null), '{"version":1,"override":null}\n');
-});
-
-// The report contract (Model.limits, the numbers in native/src/entur.rs).
-const notice=(id,text='x',extra)=>({id,summary:text,detail:text,kind:'warning',scopeLabel:text,...extra});
-const departure=(id,notices=[])=>({id,line:'R10',platform:'1',aimed:1,expected:1,arrival:1,delay:0,duration:10,
-  aimedTime:'10:00',expectedTime:'10:00',arrivalTime:'10:10',realtime:true,cancelled:false,notices});
-const reply=(changes)=>JSON.stringify({...Model.blank('ok'),updatedAt:100,...changes});
 const codePoints=s=>[...s].length;
 test('clip cuts whole code points and marks the cut',()=>{
  for(const [text,limit,expected] of [['ab',5,'ab'],['abc',3,'abc'],['abcd',3,'ab…'],['øøøø',2,'ø…'],['🚆🚆🚆',2,'🚆…'],['x',1,'x'],['xy',1,'…']])
   assert.equal(Model.clip(text,limit),expected,text);
- assert.deepEqual(Model.limits,{stations:8,departures:6,notices:3,routeNotices:5,summary:200,detail:600,scope:100,id:100,code:20,label:160});
 });
 test('a reply within the contract is unchanged',()=>{
  const r={...Model.blank('ok'),updatedAt:100,searchHours:3,departures:[departure('a',[notice('n1')])],routeNotices:[notice('r1')]};

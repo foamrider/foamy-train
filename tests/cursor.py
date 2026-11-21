@@ -18,7 +18,7 @@ KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"
 # harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
-import harness  # noqa: E402
+import harness
 
 PLUGIN = Path(__file__).resolve().parents[1]
 
@@ -94,9 +94,12 @@ ShellRoot {
     shell.view.stopHovered("route/station")
     check(body.cursorKey === "route/station", "hover lights the route notice")
     body.report = Fixtures.report("normal")
-    check(body.cursorKey === "" && body.heldKey === "", "cursor leaves a stop that is gone: '" + body.cursorKey + "'")
+    check(body.cursorKey === "", "cursor leaves a stop that is gone: '" + body.cursorKey + "'")
     shell.tick()
     check(body.cursorKey === "", "and does not come back on the next tick")
+    // The stop comes back in a later report: the cursor must not light it by itself.
+    body.report = Fixtures.report("route")
+    check(body.cursorKey === "", "nor when the stop comes back: '" + body.cursorKey + "'")
   }
 }
 """

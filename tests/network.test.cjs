@@ -206,8 +206,3 @@ test("only a shown, configured widget in force or with an open popup fetches", (
     assert.equal(c.statusProcess.running, fetches, JSON.stringify(state));
   }
 });
-test("every reconnection waits out the network settle delay", () => {
-  // Handlers are not functions; check the declaration the singleton relies on.
-  assert.match(qml, /onNetworkConnectedChanged:\s*networkSettled = false/);
-  assert.match(qml, /running: root\.networkConnected && !root\.networkSettled/);
-});

@@ -141,6 +141,9 @@ def main():
     # The fake goes on the bus before qs: Quickshell looks for NetworkManager
     # only once, at start.
     run.start_buses()
+    # A snooze without a schedule lasts until midnight, so compare it with the
+    # start time, not with the time after the run.
+    started_ms = time.time() * 1000
     try:
         with fake_nm.start(run.system_bus_address, connectivity):
             run.start()
@@ -170,7 +173,7 @@ def main():
     except (OSError, ValueError, KeyError) as error:
         override = None
         problems.append(f"the snooze file can't be read: {error}")
-    if override is not None and not (override.get("on") is False and override.get("until", 0) > time.time() * 1000):
+    if not isinstance(override, dict) or not (override.get("on") is False and override.get("until", 0) > started_ms):
         problems.append(f"the snooze file holds no snooze: {override}")
     hosts = run.host_commands()
     if hosts:

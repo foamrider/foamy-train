@@ -30,10 +30,9 @@ KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"
 # harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fake_nm  # noqa: E402
-import harness  # noqa: E402
-from fake_entur import API_PATH, ENDPOINT_ENV, ROUTE, FakeEntur, Reply, base_time, busy  # noqa: E402
+import fake_nm
+import harness
+from fake_entur import API_PATH, ENDPOINT_ENV, ROUTE, FakeEntur, Reply, base_time, busy
 
 PLUGIN = Path(__file__).resolve().parents[1]
 # The shell logs these when a step is checked; main() then changes the network.

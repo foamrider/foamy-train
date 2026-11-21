@@ -36,7 +36,7 @@ KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"
 # harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
-import harness  # noqa: E402
+import harness
 
 PLUGIN = Path(__file__).resolve().parents[1]
 

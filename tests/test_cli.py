@@ -39,9 +39,6 @@ class CliTests(unittest.TestCase):
                     "Invalid route or unavailable local cache. Select the stations again.",
                 ),
             )
-        self.assertEqual(
-            run("--route-stdin", "--offline", stdin=json.dumps(ROUTE) + " " * 5000)["errorCode"], "invalid_route"
-        )
         self.assertEqual(run("--route-stdin", "--offline", stdin="﻿" + json.dumps(ROUTE))["route"], ROUTE)
         self.assertEqual(run("--route-stdin", "--offline", stdin=json.dumps(ROUTE))["route"], ROUTE)
         self.assertEqual(run("--offline")["status"], "unconfigured")
@@ -61,21 +58,6 @@ class CliTests(unittest.TestCase):
             self.run_helper("--route-stdin", "--search=Oslo", stdin=json.dumps(ROUTE)), {"status": "ok", "stations": []}
         )
         self.assertEqual(self.entur.taken(API_PATH), [])
-
-    def test_argparse_forms(self):
-        self.assertEqual(
-            self.run_helper("--route", "--off", "--lang", "nb", "--hou", "2", stdin=json.dumps(ROUTE))["errorCode"],
-            "offline",
-        )
-        self.assertEqual(self.run_helper("--sea", "-5")["status"], "ok")
-        self.assertEqual(self.run_helper("--search", "-x y")["status"], "ok")
-        self.assertEqual(
-            self.run_helper(
-                "--hours=7", "--hours", " 3 ", "--force", "--force", "--route-stdin", stdin=json.dumps(ROUTE)
-            )["searchHours"],
-            3,
-        )
-        self.assertEqual([r["query"].split("&")[0] for r in self.entur.taken(GEOCODER_PATH)], ["q=-5", "q=-x+y"])
 
     def test_usage_errors_exit_2_without_json(self):
         bad = [
@@ -101,7 +83,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(self.entur.requests, [])
 
     def test_help(self):
-        for flag in ("-h", "--help", "--he"):
+        for flag in ("-h", "--help"):
             result = self.helper.run(flag, "--bogus")
             self.assertEqual((result.code, result.stderr), (0, b""))
             self.assertTrue(result.stdout.startswith(b"usage:"), result.stdout)

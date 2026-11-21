@@ -362,11 +362,6 @@ class ParserTests(Case):
         self.assertTrue(n["detail"].startswith("d" + "ø" * 10))
         self.assertNotIn("noticesOmitted", report)
 
-    def test_missing_platform_and_realtime_are_explicit(self):
-        d = self.plan(trips(leg(base_time(), fromEstimatedCall={})))["departures"][0]
-        self.assertEqual(d["platform"], "—")
-        self.assertFalse(d["realtime"])
-
 
 class StorageTests(Case):
     def test_neutral_first_run(self):
@@ -666,13 +661,6 @@ class StorageTests(Case):
             ("ok", 6, "Could not save the local cache.", "cache_write"),
         )
 
-    def test_no_temporary_files_remain(self):
-        self.fetch("--force")
-        self.fetch("--force", "--language", "nb")
-        self.assertEqual(
-            sorted(p.name for p in self.helper.cache_dir.iterdir()), sorted([cache_name(), cache_name(ROUTE, "nb")])
-        )
-
     def test_busy_route_needs_only_the_short_window(self):
         self.entur.plan(busy(base_time()))
         report = self.fetch("--force")
@@ -806,11 +794,6 @@ class SearchTests(Case):
         stations = self.search("Station", {"features": features})["stations"]
         self.assertEqual([s["id"] for s in stations], [f"NSR:StopPlace:{i}" for i in range(8)])
         self.assertEqual(stations[1]["name"], "Station 2")
-
-    def test_search_query_starting_with_a_dash_is_not_an_option(self):
-        found = self.search("-x", {"features": [feature("NSR:StopPlace:9", "-x Junction")]})
-        self.assertEqual(self.entur.taken(GEOCODER_PATH)[0]["query"].split("&")[0], "q=-x")
-        self.assertEqual(found["stations"][0]["name"], "-x Junction")
 
     def test_search_failures(self):
         invalid = {

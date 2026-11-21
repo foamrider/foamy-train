@@ -56,12 +56,17 @@ function translationCalls(source) {
 
 test('every text the plugin hands to FoamyI18n has an entry', () => {
   const wanted = []; // [where, key, plural]
-  const add = (where, keys, plural = false) => { for (const key of keys) wanted.push([where, key, plural]); };
+  // A call with a variable argument has no literal keys, so only the QML scan as a whole has a minimum.
   for (const file of fs.readdirSync(root).filter(f => f.endsWith('.qml'))) {
-    for (const call of translationCalls(read(file))) add(file, call.keys, call.plural);
+    for (const call of translationCalls(read(file))) for (const key of call.keys) wanted.push([file, key, call.plural]);
   }
   assert.ok(wanted.length >= 50, `literal keys found in the QML: ${wanted.length}`);
   // Keys that reach FoamyI18n.t through a variable or a kit component.
+  const add = (where, keys, plural = false) => {
+    // A source that finds nothing means its scan no longer matches the code (after a kit sync, say).
+    assert.ok(keys.length > 0, `no keys found: ${where}`);
+    for (const key of keys) wanted.push([where, key, plural]);
+  };
   add('Preferences.js dayLabels', Schema.dayLabels);
   add('TrainView.qml detail labels', literals(read('TrainView.qml'), 'label: '));
   add('TrainService.qml fail()', literals(read('TrainService.qml'), String.raw`fail\(`));

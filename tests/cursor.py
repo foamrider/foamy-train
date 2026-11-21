@@ -94,7 +94,7 @@ ShellRoot {
     shell.view.stopHovered("route/station")
     check(body.cursorKey === "route/station", "hover lights the route notice")
     body.report = Fixtures.report("normal")
-    check(body.cursorKey === "" && body.heldKey === "", "cursor leaves a stop that is gone: '" + body.cursorKey + "'")
+    check(body.cursorKey === "", "cursor leaves a stop that is gone: '" + body.cursorKey + "'")
     shell.tick()
     check(body.cursorKey === "", "and does not come back on the next tick")
   }

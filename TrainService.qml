@@ -340,9 +340,11 @@ QtObject {
     generation++
     refresh(true, false)
   }
+  // The live binding can still hold its old value while this handler runs,
+  // so canFetch() would refuse: refresh once the bindings have settled.
   onWithinScheduleChanged: if (configured && withinSchedule) {
     resetNetworkRetry()
-    refresh(true, false)
+    Qt.callLater(root.refresh, true, false)
   }
   // Outside the schedule with the last popup closed: cancel work and
   // invalidate any queued response. (An open popup keeps fetching.)

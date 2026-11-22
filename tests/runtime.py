@@ -454,8 +454,11 @@ ShellRoot {
       check(barTooltip().indexOf(" · outside your schedule") > 0, "the bar tooltip says outside your schedule: " + barTooltip())
       var always = {}
       for (var i = 0; i < Schema.dayKeys.length; i++) always[Schema.dayKeys[i]] = "00:00-24:00"
+      shell.before = shell.fetches
       shell.entry = Object.assign({}, shell.entry, always)
-      when(function() { return s.withinSchedule && a.visible }, "every day all day puts the widget in force", function() {
+      // With every popup closed, the schedule that starts fetches by itself.
+      when(function() { return s.withinSchedule && a.visible && !s.demanded && shell.fetches > shell.before },
+           "every day all day puts the widget in force and fetches at once", function() {
         check(barTooltip().indexOf("outside your schedule") < 0, "in the schedule the tooltip drops the note: " + barTooltip())
         startsAfter(function() { s.refresh(false, false) }, "a background refresh in the schedule ends", function(started) {
           check(started === 1, "in the schedule a background refresh starts the helper: " + started)

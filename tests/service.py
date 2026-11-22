@@ -84,8 +84,9 @@ ShellRoot {
   function step1() {
     IpcRegistry.call("foamy.train", "snooze", [])
     check(!s.snoozed && s.withinSchedule, "IPC snooze again resumes")
-    IpcRegistry.call("foamy.train", "refresh", [])
-    when(function() { return idle() && s.report.errorCode === "offline" }, "offline, only the cache is asked", function() {
+    // No popup is open and the network is down: resuming fetches by itself,
+    // and offline only the cache is asked.
+    when(function() { return idle() && s.report.errorCode === "offline" }, "the resume fetches; offline, only the cache is asked", function() {
       check(!s.networkReady && s.report.departures.length === 0, "offline with no cache: no departures, no network")
       console.log("FOAMY OFFLINE CHECKED")
       when(function() { return s.networkConnected }, "the network comes up", step2)

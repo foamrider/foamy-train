@@ -119,6 +119,25 @@ test("how a fetch ends: the report, the retry and the queue", () => {
   assert.deepEqual([c.report.status, c.report.stale, c.report.departures.length, c.report.error],
     ["stale", true, 1, "Invalid train response."]);
 });
+test("a failure of the fetch itself drops the error code of the reply before it", () => {
+  const offline = JSON.stringify({ ...Model.blank("error"), error: "x", errorCode: "offline" });
+  // [outcome, exit code (null: the start failed), stdout, report.error]
+  const rows = [
+    ["the start failed", null, "", "Train request failed. Try Refresh."],
+    ["the deadline killed it", 124, "", "Train request failed. Try Refresh."],
+    ["a reply that is not a report", 0, "not json", "Invalid train response."],
+    ["no helper for this CPU", 127, "", FoamyNative.UNAVAILABLE_TEXT],
+  ];
+  for (const [name, code, stdout, error] of rows) {
+    const c = fixture(false); c.networkReady = true;
+    c.refresh(true, true);
+    finish(c, 0, offline);
+    assert.equal(c.report.errorCode, "offline", name + ": the first reply");
+    c.refresh(true, true);
+    finish(c, code, stdout);
+    assert.deepEqual([c.report.error, c.report.errorCode], [error, ""], name);
+  }
+});
 test("a fetch for a replaced route or setting is dropped", () => {
   const c = fixture(false); c.networkReady = true;
   c.refresh(true, true); c.generation++;

@@ -1,6 +1,5 @@
 {
   "late": "late",
-  "Choose between 1 and 24 hours.": "Choose between 1 and 24 hours.",
   "Select both stations from search results.": "Select both stations from search results.",
   "Invalid station name.": "Invalid station name.",
   "Invalid route or unavailable local cache. Select the stations again.": "Invalid route or unavailable local cache. Select the stations again.",
@@ -37,6 +36,7 @@
   "Refreshing…": "Refreshing…",
   "Settings": "Settings",
   "Back": "Back",
+  "More options": "More options",
   "Switch direction": "Switch direction",
   "Choose your stations": "Choose your stations",
   "Choose two stations to see direct trains.": "Choose two stations to see direct trains.",

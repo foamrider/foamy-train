@@ -12,9 +12,9 @@ How the lists are made:
 
 ## `foamy-train-helper`
 
-- `bin/aarch64/foamy-train-helper`: sha256 `a82c06aa59120c8fba47e8e6a11e53f588de7c172cbd4b9493ab48950c2f8c2c`
-- `bin/x86_64/foamy-train-helper`: sha256 `7dc21f5e29ea6aae37a00cd03c360b42fa73daa49170e099821a7e902c1fd0b9`
-- `native/native.pin`: source `ce3bcfbbb425ffbf92258b9421323991cf707244cd66d8c59fb3c81162508223`, toolchain 1.99.1
+- `bin/aarch64/foamy-train-helper`: sha256 `f6cc86ddc062491d01d961a8693d8a8373ea13470a4de981c42f159d1c691f35`
+- `bin/x86_64/foamy-train-helper`: sha256 `efad1a72b35fcc44d1e8ef93f9dbec45cdf89f51dfa8103c94e4253ed97834c9`
+- `native/native.pin`: source `d2080fc584a3e0c5f3b7d2ea70d75da4b2eebf8fafc6506ba79cedd3dfb63cc3`, toolchain 1.99.1
 
 ### Crates linked into `foamy-train-helper`
 

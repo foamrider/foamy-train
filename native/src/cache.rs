@@ -61,6 +61,15 @@ fn is_bool(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::Bool(_)))
 }
 
+/// `HH:MM` in ASCII digits: the only clock text Model.js `parse` accepts, so
+/// a snapshot with any other text would fail in the widget after the helper
+/// served it.
+fn is_clock(value: Option<&Value>) -> bool {
+    matches!(value, Some(Value::String(text))
+        if matches!(text.as_bytes(), [h1, h2, b':', m1, m2]
+            if [h1, h2, m1, m2].iter().all(|b| b.is_ascii_digit())))
+}
+
 /// A complete `ok` snapshot for this route, at most a day old.
 pub fn valid_snapshot(value: &Value, route: &Value, now: i64) -> bool {
     let Value::Object(map) = value else {
@@ -91,15 +100,10 @@ pub fn valid_snapshot(value: &Value, route: &Value, now: i64) -> bool {
         let Value::Object(d) = departure else {
             return false;
         };
-        let texts = [
-            "id",
-            "line",
-            "platform",
-            "aimedTime",
-            "expectedTime",
-            "arrivalTime",
-        ];
-        if !texts.iter().all(|k| is_str(d.get(*k)))
+        if !["id", "line", "platform"].iter().all(|k| is_str(d.get(*k)))
+            || !["aimedTime", "expectedTime", "arrivalTime"]
+                .iter()
+                .all(|k| is_clock(d.get(*k)))
             || !["aimed", "expected", "arrival", "delay", "duration"]
                 .iter()
                 .all(|k| is_int(d.get(*k)))

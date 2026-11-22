@@ -102,6 +102,7 @@
 //! - `https_proxy`/`HTTPS_PROXY` and `no_proxy`/`NO_PROXY` as Python's urllib
 //!   reads them (`net.rs`): CONNECT over plain TCP whatever the proxy URL's
 //!   scheme, Basic credentials from `user:password@`, port 443 if missing.
+//!   A malformed proxy URL fails every request with `network_error`.
 //! - Test only: `FOAMY_TRAIN_ENTUR_URL` replaces `https://api.entur.io` with
 //!   a loopback base URL (`http(s)://127.0.0.1|localhost|[::1][:port]`); any
 //!   other value fails every request with `network_error`. Plain-http test
@@ -140,6 +141,10 @@
 //!   longer fails the reply. Station labels end in `…` when cut.
 //! - Malformed HTTP replies, a bad proxy port and missing tz data are
 //!   reported (`network_error`, `internal`) instead of a Python traceback.
+//! - A proxy URL without an authority (`http:/proxy`) is `network_error`
+//!   (Python said `invalid_response`): the fault is local, not Entur's.
+//! - A cached departure time that is not `HH:MM` makes the snapshot invalid
+//!   (Python served it, and the widget then refused the whole reply).
 
 mod cache;
 mod cli;

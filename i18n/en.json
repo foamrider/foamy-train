@@ -59,6 +59,7 @@
   "Saturday": "Saturday",
   "Sunday": "Sunday",
   "Cannot reach Entur. Check your connection and try Refresh.": "Cannot reach Entur. Check your connection and try Refresh.",
+  "Only HTTP proxies are supported. Check https_proxy.": "Only HTTP proxies are supported. Check https_proxy.",
   "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)",
   "Offline. Showing the last available update.": "Offline. Showing the last available update.",
   "Entur is unavailable. Try Refresh.": "Entur is unavailable. Try Refresh.",

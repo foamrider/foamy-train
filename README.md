@@ -75,7 +75,10 @@ Departures come from Entur's journey planner. To keep requests light:
   are overdue.
 
 Requests use the system's trusted certificates and honour `https_proxy` and
-`no_proxy`.
+`no_proxy`. Only HTTP proxies work (`host:port` or an `http://` URL): the
+helper talks to the proxy in plain HTTP, so with another scheme, such as
+`https://` or `socks5://`, it sends nothing and the widget says **Only HTTP
+proxies are supported. Check https_proxy.**
 
 The popup draws every station and notice it is given, so replies are held to
 small limits: by the helper while it reads Entur's answer (and when it reads

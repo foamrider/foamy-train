@@ -71,7 +71,10 @@ Panel {
     id: member
     scope: TrainService.memberScope
     demanding: root.opened
-    onIsLeaderChanged: root.pushConfig()
+    // Push when this bar becomes the leader. A bar also stops being the
+    // leader while it is destroyed, and then `root` is already gone.
+    onIsLeaderChanged: if (isLeader)
+      root.pushConfig()
   }
   onConfigChanged: pushConfig()
   Component.onCompleted: pushConfig()

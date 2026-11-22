@@ -291,6 +291,8 @@ QtObject {
     updated.status = report.updatedAt ? "stale" : "error"
     updated.stale = !!report.updatedAt
     updated.error = message
+    // The code named the earlier reply's error, not this one.
+    updated.errorCode = ""
     report = updated
   }
 

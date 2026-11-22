@@ -940,8 +940,10 @@ class TlsProxyTests(unittest.TestCase):
 
     def test_malformed_proxy_is_a_network_error(self):
         # A broken local setting is a connection problem, not a bad answer
-        # from Entur, for both kinds of request.
-        for proxy in ("http://127.0.0.1:x", "http:/127.0.0.1", "http://127.0.0.1:70000"):
+        # from Entur, for both kinds of request. The first two forms name the
+        # fake proxy, so a parser that let the defect pass would reach it.
+        port = self.proxy.port
+        for proxy in (f"http://127.0.0.1:{port}x", f"http:/127.0.0.1:{port}", "http://127.0.0.1:70000"):
             with self.subTest(proxy=proxy):
                 self.assertEqual(self.search(https_proxy=proxy)["errorCode"], "network_error")
                 report = self.helper.fetch("--force", env={"https_proxy": proxy})

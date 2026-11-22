@@ -10,7 +10,8 @@ popup still shows departures, snoozing mutes the widget until tomorrow without
 saving settings (an open popup on either bar still fetches), an oversized
 cached report (an older helper's: 10,000 route notices) reaches the popup
 within the report's limits, a station query reaches the helper as one
-argument, the schedule rows and the route fields save what they should, a
+argument, a paste that fails after a search found no station shows its own
+error under the field, the schedule rows and the route fields save what they should, a
 snooze that can't be saved still applies and is logged, a weekly schedule
 from the settings hides or mutes the widget and stops fetching, a stored
 same-station route is reported without a fetch, and switching the weekly
@@ -363,7 +364,40 @@ ShellRoot {
   function step11() {
     check(search.error === "" && search.results.length === 8 && search.results[7].id === "NSR:StopPlace:8",
           "a long station list shows the first 8: " + search.results.length + " " + search.error)
-    when(function() { return find(pane, "scheduleSunday") !== null }, "the settings page lists the schedule days", step12)
+    stepPaste()
+  }
+  // The texts a user sees under `item`: shown items with a non-empty text.
+  function shown(item) {
+    var list = item.visible && typeof item.text === "string" && item.text !== "" ? [item.text] : []
+    for (var i = 0; i < item.children.length; i++) list = list.concat(shown(item.children[i]))
+    return list
+  }
+  // A typed name finds no station, then a paste fails (the clipboard holds
+  // no text: main() makes the wl-paste stand-in fail). The line under the
+  // field shows the paste's error, not the older search message.
+  function stepPaste() {
+    search.pluginDir = Quickshell.env("FOAMY_TRAIN_FAKE_EMPTY_SEARCH")
+    shell.startSearch("Xyzzy")
+    when(function() { return !search.inFlight }, "the search that finds no station ends", function() {
+      check(shown(search).indexOf("No stations found.") >= 0, "a search that finds no station says so: " + shown(search).join(" | "))
+      // A paste lands only in a field with the focus, in the active window.
+      var window = search.Window.window
+      window.requestActivate()
+      when(function() { return window.active }, "the station search window is active", function() {
+        search.input.focusInput()
+        when(function() { return search.input.inputActiveFocus }, "the station field takes the focus", stepPasteFails)
+      })
+    })
+  }
+  function stepPasteFails() {
+    search.input.requestPaste(false)
+    when(function() { return !search.input.pasteRunning }, "the failed paste ends", function() {
+      var texts = shown(search)
+      check(texts.indexOf("Could not paste clipboard text. Copy plain text and try again.") >= 0 && texts.indexOf("No stations found.") < 0,
+            "a failed paste shows its error under the station field, not the older search message: " + texts.join(" | ")
+            + " (the field's paste error: " + search.input.pasteError + ")")
+      when(function() { return find(pane, "scheduleSunday") !== null }, "the settings page lists the schedule days", step12)
+    })
   }
   // The schedule rows: popup text labels, the switch and the time fields
   // save the day's range; an invalid time is reported, not saved.
@@ -652,6 +686,11 @@ def main():
     # fail before it connects.
     run.env["FOAMY_TRAIN_ENTUR_URL"] = "http://entur.invalid"
     run.env["FOAMY_TRAIN_FAKE_SEARCH"] = str(fake_search(run.base / "fake-search"))
+    run.env["FOAMY_TRAIN_FAKE_EMPTY_SEARCH"] = str(fake_search(run.base / "fake-empty-search", count=0))
+    # A paste reads the kit's wl-paste stand-in, never the real clipboard. It
+    # fails, as wl-paste does when the clipboard holds no text (an image).
+    run.env.update(harness.hostenv.clipboard_fakes(run.base / "clipboard", run.env))
+    Path(run.env["TEST_CLIPBOARD_STATE"]).write_text("failure")
     oversized_cache(Path(run.env["HOME"]), ROUTE)
     readonly = run.base / "readonly-state"
     readonly.mkdir(mode=0o500)

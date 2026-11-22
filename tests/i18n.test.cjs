@@ -54,8 +54,9 @@ function translationCalls(source) {
   return calls;
 }
 
-test('every text the plugin hands to FoamyI18n has an entry', () => {
-  const wanted = []; // [where, key, plural]
+// [where, key, plural] for every text the plugin hands to FoamyI18n.
+function pluginKeys() {
+  const wanted = [];
   // A call with a variable argument has no literal keys, so only the QML scan as a whole has a minimum.
   for (const file of fs.readdirSync(root).filter(f => f.endsWith('.qml'))) {
     for (const call of translationCalls(read(file))) for (const key of call.keys) wanted.push([file, key, call.plural]);
@@ -106,6 +107,27 @@ test('every text the plugin hands to FoamyI18n has an entry', () => {
   for (const name of used) for (const call of translationCalls(kitSource(name))) for (const key of call.keys) kitKeys.push([`kit ${name}`, key, call.plural]);
   assert.ok(used.has('FoamyHeader') && kitKeys.length > 0, `kit component texts found: ${kitKeys.length}`);
   wanted.push(...kitKeys);
+  return wanted;
+}
+
+// The messages the helper reports, which the plugin shows through FoamyI18n.
+function helperKeys() {
+  const native = path.join(root, 'native', 'src');
+  const helper = fs.readdirSync(native).filter(f => f.endsWith('.rs')).map(f => fs.readFileSync(path.join(native, f), 'utf8')).join('\n');
+  const keys = [...helper.matchAll(/TrainError::new\(\s*"[a-z_]+",\s*"([^"]+)",?\s*\)/g)].map(m => m[1]);
+  assert.ok(keys.length >= 12, `helper error keys found: ${keys.length}`);
+  return keys;
+}
+
+// tls::UNSUPPORTED (the vendored kit's message) is the error on a CPU without HTTPS support.
+function unsupportedText() {
+  const unsupported = read('kit', 'rust', 'foamy-helper', 'src', 'tls.rs').match(/pub const UNSUPPORTED: &str = "((?:[^"\\]|\\.)*)";/);
+  assert.ok(unsupported, 'kit tls::UNSUPPORTED');
+  return unsupported[1];
+}
+
+test('every text the plugin hands to FoamyI18n has an entry', () => {
+  const wanted = pluginKeys();
   const missing = wanted.filter(([, key]) => !Object.hasOwn(en, key)).map(([where, key]) => `${where}: ${key}`);
   assert.deepEqual(missing, [], 'missing catalog keys');
   const notPlural = wanted.filter(([, key, plural]) => plural && typeof en[key] !== 'object').map(([where, key]) => `${where}: ${key}`);
@@ -113,20 +135,19 @@ test('every text the plugin hands to FoamyI18n has an entry', () => {
 });
 
 test("the helper's user-facing errors are catalog keys", () => {
-  const native = path.join(root, 'native', 'src');
-  const helper = fs.readdirSync(native).filter(f => f.endsWith('.rs')).map(f => fs.readFileSync(path.join(native, f), 'utf8')).join('\n');
-  const helperKeys = [...helper.matchAll(/TrainError::new\(\s*"[a-z_]+",\s*"([^"]+)",?\s*\)/g)].map(m => m[1]);
-  assert.ok(helperKeys.length >= 12, `helper error keys found: ${helperKeys.length}`);
-  for (const key of helperKeys) assert.ok(Object.hasOwn(en, key), `helper error key: ${key}`);
+  for (const key of helperKeys()) assert.ok(Object.hasOwn(en, key), `helper error key: ${key}`);
 });
 
 test("the kit's HTTPS-unsupported text is a catalog key, in its current wording only", () => {
-  // tls::UNSUPPORTED (the vendored kit's message) is the error on a CPU without HTTPS support:
-  // the catalogs must carry exactly the kit's text, and no other (stale) wording of it.
-  const unsupported = read('kit', 'rust', 'foamy-helper', 'src', 'tls.rs').match(/pub const UNSUPPORTED: &str = "((?:[^"\\]|\\.)*)";/);
-  assert.ok(unsupported, 'kit tls::UNSUPPORTED');
-  assert.ok(Object.hasOwn(en, unsupported[1]), `helper error key (kit tls::UNSUPPORTED): ${unsupported[1]}`);
+  // The catalogs must carry exactly the kit's text, and no other (stale) wording of it.
+  const unsupported = unsupportedText();
+  assert.ok(Object.hasOwn(en, unsupported), `helper error key (kit tls::UNSUPPORTED): ${unsupported}`);
   for (const key of Object.keys(en).filter(k => k.startsWith("HTTPS isn't supported on this CPU"))) {
-    assert.equal(key, unsupported[1], 'HTTPS-unsupported key matches the kit\'s tls::UNSUPPORTED');
+    assert.equal(key, unsupported, 'HTTPS-unsupported key matches the kit\'s tls::UNSUPPORTED');
   }
+});
+
+test('every catalog entry is a text the plugin, its kit components or its helper shows', () => {
+  const shown = new Set([...pluginKeys().map(([, key]) => key), ...helperKeys(), unsupportedText()]);
+  assert.deepEqual(Object.keys(en).filter(key => !shown.has(key)), [], 'catalog entries nothing asks for');
 });

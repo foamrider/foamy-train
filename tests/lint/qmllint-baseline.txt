@@ -1,12 +1,6 @@
 # qmllint findings accepted when the check was adopted. tests/validate.sh fails on any
 # finding not listed here. Regenerate with `tests/validate.sh --update-baseline qmllint`
 # only to drop fixed entries or after reviewing every added one; never to pass a check.
-DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-DepartureCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-DepartureCard.qml: missing-property: Member "subtitle" not found on type "QObject" | font.pixelSize: FoamyStyle.font.subtitle
 DepartureCard.qml: unqualified: Unqualified access | cancelled: root.departure.cancelled
 DepartureCard.qml: unqualified: Unqualified access | cursorKey: "dep/" + root.departure.id + "/" + modelData.id
 DepartureCard.qml: unqualified: Unqualified access | view: root.view
@@ -39,8 +33,6 @@ Panel.qml: unqualified: Unqualified access | routeSaving: root.routeSaving
 Panel.qml: unqualified: Unqualified access | saving: root.saving
 Panel.qml: unqualified: Unqualified access | settings: root.effectiveSettings
 Panel.qml: unqualified: Unqualified access | settingsError: root.settingsError
-SettingsPane.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-SettingsPane.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
 SettingsPane.qml: unqualified: Unqualified access | enabled: !root.saving
 SettingsPane.qml: unqualified: Unqualified access | onInvalid: root.saveRequested(modelData, "invalid")
 SettingsPane.qml: unqualified: Unqualified access | root.saveRequested(modelData, range)
@@ -49,8 +41,6 @@ StationSearch.qml: block-scope-var-declaration: var declaration in block scope i
 StationSearch.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var stations = Model.stations(data)
 StationSearch.qml: id-shadows-member: Id for object SafeTextField shadows property "input". Rename one or the other. | input.text = value ? value.name : ""
 StationSearch.qml: id-shadows-member: Note: Id defined here | id: input
-StationSearch.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-StationSearch.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
 StationSearch.qml: unqualified: Unqualified access | Keys.onDownPressed: if (index + 1 < resultRepeater.count)
 StationSearch.qml: unqualified: Unqualified access | Keys.onUpPressed: index > 0 ? resultRepeater.itemAt(index - 1).forceActiveFocus() : input.focusInput()
 StationSearch.qml: unqualified: Unqualified access | Keys.onUpPressed: index > 0 ? resultRepeater.itemAt(index - 1).forceActiveFocus() : input.focusInput()
@@ -64,23 +54,8 @@ TrainBar.qml: missing-property: Member "iconCanvas" not found on type "QObject" 
 TrainService.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var parsed = Model.route(JSON.parse(configuredRoute))
 TrainService.qml: import: Type TrainService not declared as singleton in qmldir but using pragma Singleton
 TrainService.qml: missing-property: Member "requestInput" not found on type TrainService::statusProcess with type Process | statusProcess.requestInput = JSON.stringify(route) + "\n"
-TrainText.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
 TrainView.qml: id-shadows-member: Id for object FoamyHeroBand shadows property "band". Rename one or the other. | var item = cursorKey === "swap" || cursorKey === "settings" ? band : cursorKey === "choose" ? chooseAction : cursorKey === "refresh" ? refreshAction : null
 TrainView.qml: id-shadows-member: Note: Id defined here | id: band
-TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-TrainView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-TrainView.qml: missing-property: Member "display" not found on type "QObject" | font.pixelSize: FoamyStyle.font.display
-TrainView.qml: missing-property: Member "heading" not found on type "QObject" | font.pixelSize: FoamyStyle.font.heading
-TrainView.qml: missing-property: Member "heading" not found on type "QObject" | font.pixelSize: FoamyStyle.font.heading
-TrainView.qml: missing-property: Member "heading" not found on type "QObject" | font.pixelSize: FoamyStyle.font.heading
-TrainView.qml: missing-property: Member "heading" not found on type "QObject" | spacing: FoamyStyle.font.heading
-TrainView.qml: missing-property: Member "numeral" not found on type "QObject" | font.pixelSize: FoamyStyle.font.numeral
-TrainView.qml: missing-property: Member "numeralCompact" not found on type "QObject" | font.pixelSize: FoamyStyle.font.numeralCompact
 TrainView.qml: unqualified: Unqualified access | destination: root.report.route ? root.report.route.to.name : ""
 TrainView.qml: unqualified: Unqualified access | destination: root.report.route ? root.report.route.to.name : ""
 TrainView.qml: unqualified: Unqualified access | language: root.language

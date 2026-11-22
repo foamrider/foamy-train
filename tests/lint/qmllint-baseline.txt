@@ -70,8 +70,6 @@ TrainView.qml: unqualified: Unqualified access | view: root
 preview/BarPreview.qml: missing-property: Member "background" not found on type "QObject" | color: Commons.Color.bar.background
 preview/BarPreview.qml: missing-property: Member "text" not found on type "QObject" | foreground: Commons.Color.bar.text
 preview/BarPreview.qml: property-override: Member "data" shadows member "data" from base type "QQuickItem", use a different name or add a final or override specifier. | readonly property var data: preview.sample(modelData.mode)
-preview/BarPreview.qml: unqualified: Unqualified access | Component.onCompleted: if (noticeIcon !== modelData.icon)
-preview/BarPreview.qml: unqualified: Unqualified access | console.log("FOAMY FAIL " + modelData.mode + " notice icon was '" + noticeIcon + "'")
 preview/BarPreview.qml: unqualified: Unqualified access | model: preview.modes
 preview/BarPreview.qml: unqualified: Unqualified access | readonly property var data: preview.sample(modelData.mode)
 preview/BarPreview.qml: unqualified: Unqualified access | readonly property var data: preview.sample(modelData.mode)

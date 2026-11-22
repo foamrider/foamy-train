@@ -213,6 +213,8 @@ fn split_port(host: &str) -> &str {
 /// A proxy as urllib's `_parse_proxy` and http.client read it: the scheme is
 /// ignored (an https request always tunnels with CONNECT over plain TCP),
 /// credentials need both a user and a password, a missing port is 443.
+/// A malformed URL is `network_error`: a broken local setting, not a bad
+/// answer from Entur.
 #[derive(Debug, PartialEq)]
 pub struct ProxySpec {
     pub host: String,
@@ -228,7 +230,7 @@ pub fn parse_proxy(proxy: &str) -> Result<ProxySpec, TrainError> {
     let authority = if !rest.starts_with('/') {
         proxy
     } else if !rest.starts_with("//") {
-        return Err(INVALID); // "proxy URL with no authority" is a ValueError
+        return Err(NETWORK);
     } else {
         let end = match rest.find('@') {
             Some(at) => rest[at..].find('/').map(|e| e + at),
@@ -253,7 +255,7 @@ pub fn parse_proxy(proxy: &str) -> Result<ProxySpec, TrainError> {
             } else {
                 match crate::cli::python_int(digits) {
                     Some(port) => u16::try_from(port).map_err(|_| NETWORK)?,
-                    None => return Err(INVALID), // http.client.InvalidURL
+                    None => return Err(NETWORK),
                 }
             };
             (hostport[..i].to_owned(), port)
@@ -637,8 +639,8 @@ mod tests {
         );
         assert_eq!(parse_proxy("http://[::1]"), Ok(spec("::1", 443, None)));
         assert_eq!(parse_proxy("http://proxy:"), Ok(spec("proxy", 443, None)));
-        assert_eq!(parse_proxy("http:/proxy"), Err(INVALID));
-        assert_eq!(parse_proxy("http://proxy:x"), Err(INVALID));
+        assert_eq!(parse_proxy("http:/proxy"), Err(NETWORK));
+        assert_eq!(parse_proxy("http://proxy:x"), Err(NETWORK));
         assert_eq!(parse_proxy("http://proxy:70000"), Err(NETWORK));
     }
 

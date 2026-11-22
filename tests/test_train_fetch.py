@@ -570,6 +570,12 @@ class StorageTests(Case):
             dict(good, departures=[dict(departure, delay=1.0)]),
             dict(good, departures=[dict(departure, realtime=1)]),
             dict(good, departures=[dict(departure, line=None)]),
+            # The widget takes a clock time only as two ASCII digits, ":" and two digits.
+            dict(good, departures=[dict(departure, aimedTime="9:05")]),
+            dict(good, departures=[dict(departure, expectedTime="1000")]),
+            dict(good, departures=[dict(departure, arrivalTime="10:10\n")]),
+            dict(good, departures=[dict(departure, arrivalTime="１0:10")]),
+            dict(good, departures=[dict(departure, expectedTime="")]),
             dict(good, departures=["x"]),
             dict(good, routeNotices=[dict(n, kind="error")]),
             dict(good, departures=[dict(departure, notices=[{"id": "n"}])]),
@@ -931,6 +937,19 @@ class TlsProxyTests(unittest.TestCase):
     def test_unreachable_proxy_is_a_network_error(self):
         self.assertEqual(self.search(https_proxy="http://127.0.0.1:9")["errorCode"], "network_error")
         self.assertEqual(self.entur.requests, [])
+
+    def test_malformed_proxy_is_a_network_error(self):
+        # A broken local setting is a connection problem, not a bad answer
+        # from Entur, for both kinds of request. The first two forms name the
+        # fake proxy, so a parser that let the defect pass would reach it.
+        port = self.proxy.port
+        for proxy in (f"http://127.0.0.1:{port}x", f"http:/127.0.0.1:{port}", "http://127.0.0.1:70000"):
+            with self.subTest(proxy=proxy):
+                self.assertEqual(self.search(https_proxy=proxy)["errorCode"], "network_error")
+                report = self.helper.fetch("--force", env={"https_proxy": proxy})
+                self.assertEqual((report["status"], report["errorCode"]), ("error", "network_error"))
+        self.assertEqual(self.entur.requests, [])
+        self.assertEqual(self.proxy.seen(), [])
 
     def test_trickling_proxy_reply_is_bounded_by_the_request_deadline(self):
         # Each byte arrives well within any per-read timeout; only the

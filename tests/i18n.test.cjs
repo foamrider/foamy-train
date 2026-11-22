@@ -87,6 +87,25 @@ test('every text the plugin hands to FoamyI18n has an entry', () => {
   const i18n = read('kit', 'FoamyI18n.qml').replace(/^\s*\/\/.*$/gm, '');
   add('kit FoamyI18n.updatedAgo', literals(i18n, String.raw`\bt\(`).filter(k => k.startsWith('Updated ')));
   add('kit FoamyI18n.updatedAgo', literals(i18n, String.raw`\btn\(`).filter(k => k.startsWith('Updated ')), true);
+  // The kit components the plugin's QML builds, directly or through another
+  // kit component, translate their own default labels and tooltips.
+  const kitComponents = new Set(fs.readdirSync(path.join(root, 'kit')).filter(f => f.endsWith('.qml')).map(f => f.slice(0, -4)));
+  const kitSource = name => read('kit', name + '.qml').replace(/^\s*\/\/.*$/gm, '');
+  const built = source => [...source.matchAll(/\b([A-Z]\w*)\s*\{/g)].map(m => m[1]).filter(name => kitComponents.has(name));
+  const pluginQml = fs.readdirSync(root).filter(f => f.endsWith('.qml')).map(f => read(f)).join('\n');
+  const used = new Set();
+  for (const pending = built(pluginQml); pending.length;) {
+    const name = pending.pop();
+    if (used.has(name)) continue;
+    used.add(name);
+    pending.push(...built(kitSource(name)));
+  }
+  // FoamyInfoNote shows only beside a FoamySettingsSection `info`, which no section sets.
+  if (!/\binfo\s*:/.test(pluginQml)) used.delete('FoamyInfoNote');
+  const kitKeys = [];
+  for (const name of used) for (const call of translationCalls(kitSource(name))) for (const key of call.keys) kitKeys.push([`kit ${name}`, key, call.plural]);
+  assert.ok(used.has('FoamyHeader') && kitKeys.length > 0, `kit component texts found: ${kitKeys.length}`);
+  wanted.push(...kitKeys);
   const missing = wanted.filter(([, key]) => !Object.hasOwn(en, key)).map(([where, key]) => `${where}: ${key}`);
   assert.deepEqual(missing, [], 'missing catalog keys');
   const notPlural = wanted.filter(([, key, plural]) => plural && typeof en[key] !== 'object').map(([where, key]) => `${where}: ${key}`);

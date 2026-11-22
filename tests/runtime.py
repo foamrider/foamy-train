@@ -12,8 +12,10 @@ cached report (an older helper's: 10,000 route notices) reaches the popup
 within the report's limits, a station query reaches the helper as one
 argument, the schedule rows and the route fields save what they should, a
 snooze that can't be saved still applies and is logged, a weekly schedule
-from the settings hides or mutes the widget and stops fetching, and a stored
-same-station route is reported without a fetch.
+from the settings hides or mutes the widget and stops fetching, a stored
+same-station route is reported without a fetch, and switching the weekly
+schedule on in the popup's settings shows its day rows and keeps the page
+within its bounds while the popup grows to fit.
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
@@ -67,6 +69,12 @@ ShellRoot {
   }
   function check(ok, what) { if (!ok) console.log("FOAMY FAIL " + what); else console.log("FOAMY OK " + what) }
   MockBar { id: bar; moduleName: "foamy.train" }
+  // The screen the popups draw into (offscreen Qt has no layer shell): an
+  // open popup lays out and shows as on the desktop.
+  FloatingWindow {
+    visible: true; implicitWidth: 1920; implicitHeight: 1080
+    ScreenSim {}
+  }
   // The stock lock's in-process `lock isLocked` target.
   ShellIpc { target: "lock"; function isLocked(): string { return shell.locked ? "true" : "false" } }
   FloatingWindow {
@@ -474,8 +482,89 @@ ShellRoot {
     when(function() { return s.route === null && s.report.status === "error" && idle() }, "a stored same-station route gives an error report", function() {
       check(s.report.error === "Choose two different stations." && shell.fetches === shell.before,
             "an invalid stored route is reported and nothing is fetched: " + s.report.error)
-      console.log("FOAMY DONE")
-      Qt.quit()
+      stepScheduleReveal()
+    })
+  }
+  // Switching the weekly schedule on in the popup's settings: the card grows
+  // with its content (FoamyPopup fits it to the body), the page scrolls the
+  // day rows into view and stays within its bounds. First with less room
+  // than the page needs (the card capped at 700 px), then with room for all
+  // of it (the screen's available height).
+  function stepScheduleReveal() {
+    shell.entry = { route: shell.route, refreshSeconds: 300 }
+    when(function() { return s.route && s.route.from.id === shell.route.from.id && idle() }, "a valid route is stored again", function() {
+      scheduleReveal(700, true, function() {
+        scheduleReveal(0, false, function() {
+          console.log("FOAMY DONE")
+          Qt.quit()
+        })
+      })
+    })
+  }
+  // The FoamySettingsPage around `item`.
+  function settingsPage(item) {
+    for (var at = item; at; at = at.parent) if (at.flickable !== undefined && at.wheel !== undefined) return at
+    return null
+  }
+  // Runs `then` once `ready()` holds and the page is at rest: no glide runs
+  // and two readings in a row agree.
+  function whenAtRest(page, ready, label, then) {
+    var flick = page.flickable, last = ""
+    when(function() {
+      var reading = [flick.contentY, flick.contentHeight, flick.height].join("/")
+      var still = reading === last
+      last = reading
+      return ready() && isNaN(page.wheel.destination) && still
+    }, label, then)
+  }
+  function scheduleReveal(cap, overflows, then) {
+    var room = cap > 0 ? "a card capped at " + cap + " px" : "room for the whole page"
+    var toggle = null, page = null
+    a.popup.maxHeight = cap
+    a.openSettings()
+    when(function() {
+      toggle = a.popup.bodyItem ? find(a.popup.bodyItem, "scheduleEnabled") : null
+      page = toggle ? settingsPage(toggle) : null
+      return a.opened && a.editingSettings && page && page.visible && page.flickable.height > 0
+    }, "Settings opens (" + room + ")", function() {
+      var flick = page.flickable
+      whenAtRest(page, function() { return !toggle.checked && !a.saving }, "Settings comes to rest with the schedule off (" + room + ")", function() {
+        check(flick.contentY === 0, "Settings opens at the top of its page (" + room + "): contentY " + flick.contentY)
+        var saves = bar.saved.length
+        toggle.clicked()
+        var saved = bar.saved[bar.saved.length - 1]
+        check(bar.saved.length === saves + 1 && saved.settings.scheduleEnabled === true, "the switch saves the schedule on (" + room + ")")
+        // As the host reflects the save to every bar instance.
+        shell.entry = saved.settings
+        whenAtRest(page, function() {
+          var sunday = find(page, "scheduleSunday")
+          return toggle.checked && !a.saving && sunday && sunday.height > 0
+                 && sunday.mapToItem(flick.contentItem, 0, 0).y + sunday.height <= flick.contentHeight + 0.5
+        }, "the settings page comes to rest with the schedule's rows laid out (" + room + ")", function() {
+          var end = Math.max(0, flick.contentHeight - flick.height)
+          var top = flick.contentY, bottom = top + flick.height
+          check(top >= -0.5 && top <= end + 0.5,
+                "the page stays within its bounds (" + room + "): contentY " + top + ", its end " + end
+                + (top > end ? ", " + (top - end) + " px past its end" : ""))
+          var monday = find(page, "scheduleMonday"), sunday = find(page, "scheduleSunday")
+          var rowsTop = monday.mapToItem(flick.contentItem, 0, 0).y
+          var rowsBottom = sunday.mapToItem(flick.contentItem, 0, 0).y + sunday.height
+          if (overflows)
+            check(end > 0 && rowsBottom > flick.height, "the page is taller than the card, and the rows end below an unscrolled view ("
+                  + room + "): rows end at " + rowsBottom + ", view " + flick.height + ", page " + flick.contentHeight)
+          else
+            check(end < 0.5, "the whole page fits (" + room + "): page " + flick.contentHeight + ", view " + flick.height)
+          check(rowsTop >= top - 0.5 && rowsBottom <= bottom + 0.5,
+                "the schedule's day rows are in view (" + room + "): rows " + rowsTop + "-" + rowsBottom + ", view " + top + "-" + bottom)
+          // The schedule off again, at rest, before the next case opens Settings.
+          toggle.clicked()
+          shell.entry = bar.saved[bar.saved.length - 1].settings
+          whenAtRest(page, function() { return !toggle.checked && !a.saving }, "the settings page comes to rest with the schedule off again (" + room + ")", function() {
+            a.close()
+            when(function() { return !a.opened }, "the popup closes (" + room + ")", then)
+          })
+        })
+      })
     })
   }
 }

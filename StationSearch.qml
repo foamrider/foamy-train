@@ -116,6 +116,10 @@ Column {
       debounce.restart()
       root.changed()
     }
+    // A failed paste is newer than the last search's message: the line below
+    // the field shows the paste's error instead.
+    onPasteErrorChanged: if (pasteError !== "")
+      root.error = ""
     onKeyPressed: function (event) {
       if (event.key === Qt.Key_Down && resultRepeater.count > 0) {
         resultRepeater.itemAt(0).forceActiveFocus()

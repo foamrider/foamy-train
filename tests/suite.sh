@@ -38,11 +38,12 @@ else
   skip "the aarch64 helper: no qemu-aarch64 binfmt handler"
 fi
 if ((ci || fast)); then
-  skip "the kit's i18n_runtime.py, tests/runtime.py, tests/cursor.py, tests/states.py and tests/service.py: offscreen Quickshell"
+  skip "the kit's i18n_runtime.py, tests/runtime.py, tests/leader.py, tests/cursor.py, tests/states.py and tests/service.py: offscreen Quickshell"
 else
   kit=${FOAMY_KIT:-$HOME/GitHub/Personal/foamy-kit}
   run python3 "$kit/preview/i18n_runtime.py" .
   run python3 tests/runtime.py
+  run python3 tests/leader.py
   run python3 tests/cursor.py
   run python3 tests/states.py
   run python3 tests/service.py

@@ -6,8 +6,8 @@ import "../tests/Fixtures.js" as Fixtures
 
 // Bar widget states for the foamy-kit harness:
 //   render.py <plugin> --preview preview/BarPreview.qml
-// Each row is the real TrainBar on a bar-coloured strip; the notice marker
-// expected for each state is checked (FOAMY FAIL on a mismatch).
+// Each row is the real TrainBar on a bar-coloured strip. tests/states.py
+// checks the countdown and the notice marker of each state.
 Item {
   id: preview
   required property QtObject bar
@@ -18,53 +18,43 @@ Item {
   readonly property var modes: [
     {
       label: "On time",
-      mode: "normal",
-      icon: ""
+      mode: "normal"
     },
     {
       label: "Later departure",
-      mode: "long",
-      icon: ""
+      mode: "long"
     },
     {
       label: "Delayed 3 minutes",
-      mode: "delay",
-      icon: ""
+      mode: "delay"
     },
     {
       label: "Incident",
-      mode: "incident",
-      icon: "warning"
+      mode: "incident"
     },
     {
       label: "Information",
-      mode: "info",
-      icon: "info"
+      mode: "info"
     },
     {
       label: "Route information",
-      mode: "route-info",
-      icon: "info"
+      mode: "route-info"
     },
     {
       label: "Cancellation",
-      mode: "cancelled",
-      icon: "cancelled"
+      mode: "cancelled"
     },
     {
       label: "Cached times",
-      mode: "stale",
-      icon: ""
+      mode: "stale"
     },
     {
       label: "Outside schedule",
-      mode: "schedule",
-      icon: ""
+      mode: "schedule"
     },
     {
       label: "Minutes hidden · incident",
-      mode: "hidden",
-      icon: "warning"
+      mode: "hidden"
     }
   ]
   function sample(mode) {
@@ -123,8 +113,6 @@ Item {
                 withinSchedule: modelData.mode !== "schedule"
                 showMinutes: modelData.mode !== "hidden"
                 opacity: withinSchedule && !stale ? 1 : 0.45
-                Component.onCompleted: if (noticeIcon !== modelData.icon)
-                  console.log("FOAMY FAIL " + modelData.mode + " notice icon was '" + noticeIcon + "'")
               }
             }
           }

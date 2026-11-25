@@ -56,7 +56,7 @@
 //! | `invalid_route` | Select both stations from search results. / Invalid station name. / Choose two different stations. |
 //! | `invalid_input` | Invalid route or unavailable local cache. Select the stations again. |
 //! | `offline` | Offline. Showing the last available update. |
-//! | `network_error` | Cannot reach Entur. Check your connection and try Refresh. |
+//! | `network_error` | Cannot reach Entur. Check your connection and try Refresh. / Only HTTP proxies are supported. Check https_proxy. |
 //! | `http_error` | Entur is unavailable. Try Refresh. |
 //! | `invalid_response` | Entur returned an invalid response. Try Refresh. / Station search returned an invalid response. |
 //! | `api_error` | Entur could not find departures. Try Refresh. |
@@ -100,8 +100,11 @@
 //!   `timeout_global`, and each socket read and write capped at the time left
 //!   (`net::DeadlineTransport`), so a peer trickling bytes cannot extend it.
 //! - `https_proxy`/`HTTPS_PROXY` and `no_proxy`/`NO_PROXY` as Python's urllib
-//!   reads them (`net.rs`): CONNECT over plain TCP whatever the proxy URL's
-//!   scheme, Basic credentials from `user:password@`, port 443 if missing.
+//!   reads them (`net.rs`): CONNECT over plain TCP, Basic credentials from
+//!   `user:password@`, port 443 if missing. The proxy is `host:port` or an
+//!   `http://` URL (the scheme in any case); any other scheme (`https://`,
+//!   `socks5://`, …) fails every request with `network_error` and "Only HTTP
+//!   proxies are supported. Check https_proxy." before a connection is made.
 //!   A malformed proxy URL fails every request with `network_error`.
 //! - Test only: `FOAMY_TRAIN_ENTUR_URL` replaces `https://api.entur.io` with
 //!   a loopback base URL (`http(s)://127.0.0.1|localhost|[::1][:port]`); any
@@ -143,6 +146,9 @@
 //!   reported (`network_error`, `internal`) instead of a Python traceback.
 //! - A proxy URL without an authority (`http:/proxy`) is `network_error`
 //!   (Python said `invalid_response`): the fault is local, not Entur's.
+//! - A proxy URL with a scheme other than http is refused (Python ignored
+//!   the scheme: a SOCKS proxy got an HTTP CONNECT, and an `https://` proxy
+//!   got its Basic credentials in clear text).
 //! - A cached departure time that is not `HH:MM` makes the snapshot invalid
 //!   (Python served it, and the widget then refused the whole reply).
 

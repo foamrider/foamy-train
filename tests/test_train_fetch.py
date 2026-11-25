@@ -39,6 +39,7 @@ from fake_entur import (
 )
 
 INVALID = "Entur returned an invalid response. Try Refresh."
+ONLY_HTTP = "Only HTTP proxies are supported. Check https_proxy."
 
 
 class Case(unittest.TestCase):
@@ -950,6 +951,26 @@ class TlsProxyTests(unittest.TestCase):
                 self.assertEqual((report["status"], report["errorCode"]), ("error", "network_error"))
         self.assertEqual(self.entur.requests, [])
         self.assertEqual(self.proxy.seen(), [])
+
+    def test_a_proxy_scheme_other_than_http_is_refused(self):
+        # Requests tunnel with HTTP CONNECT over plain TCP, which a SOCKS proxy
+        # cannot answer and which would send an https:// proxy's credentials
+        # in clear text. The forms name the fake proxy, so a helper that
+        # ignored the scheme would reach it.
+        port = self.proxy.port
+        refused = ("error", "network_error", ONLY_HTTP)
+        for proxy in (f"socks5://127.0.0.1:{port}", f"https://user:pw@127.0.0.1:{port}"):
+            with self.subTest(proxy=proxy):
+                report = self.search(https_proxy=proxy)
+                self.assertEqual((report["status"], report.get("errorCode"), report.get("error")), refused)
+                report = self.helper.fetch("--force", env={"https_proxy": proxy})
+                self.assertEqual((report["status"], report["errorCode"], report["error"]), refused)
+        self.assertEqual(self.proxy.seen(), [])
+        self.assertEqual(self.entur.requests, [])
+        # The http scheme matches in any case.
+        report = self.search(https_proxy=f"HTTP://127.0.0.1:{port}")
+        self.assertEqual((report["status"], report.get("error")), ("ok", None))
+        self.assertEqual(len(self.proxy.seen()), 1)
 
     def test_trickling_proxy_reply_is_bounded_by_the_request_deadline(self):
         # Each byte arrives well within any per-read timeout; only the

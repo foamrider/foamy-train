@@ -37,6 +37,12 @@ const NETWORK: TrainError = TrainError::new(
 /// No HTTPS on a CPU without the instructions Graviola needs: a network
 /// failure (same reply shape, stale snapshot kept) with the kit's message.
 const TLS_UNSUPPORTED: TrainError = TrainError::new("network_error", tls::UNSUPPORTED);
+/// A proxy URL whose scheme is not http: a network failure that names the
+/// setting, since only the user can fix it.
+const PROXY_UNSUPPORTED: TrainError = TrainError::new(
+    "network_error",
+    "Only HTTP proxies are supported. Check https_proxy.",
+);
 
 /// Where requests go: `https://api.entur.io`, or the test-only override.
 pub struct Endpoint {
@@ -210,11 +216,13 @@ fn split_port(host: &str) -> &str {
     }
 }
 
-/// A proxy as urllib's `_parse_proxy` and http.client read it: the scheme is
-/// ignored (an https request always tunnels with CONNECT over plain TCP),
-/// credentials need both a user and a password, a missing port is 443.
-/// A malformed URL is `network_error`: a broken local setting, not a bad
-/// answer from Entur.
+/// A proxy as urllib's `_parse_proxy` and http.client read it, except that
+/// a URL's scheme must be http (in any case): every request tunnels with
+/// CONNECT over plain TCP, which a SOCKS proxy cannot answer and which would
+/// send an https:// proxy's credentials in clear text, so another scheme is
+/// refused before any connection. `host:port` has no scheme. Credentials
+/// need both a user and a password, a missing port is 443. A malformed URL
+/// is `network_error`: a broken local setting, not a bad answer from Entur.
 #[derive(Debug, PartialEq)]
 pub struct ProxySpec {
     pub host: String,
@@ -223,12 +231,14 @@ pub struct ProxySpec {
 }
 
 pub fn parse_proxy(proxy: &str) -> Result<ProxySpec, TrainError> {
-    let rest = match proxy.find(':') {
-        Some(i) if i > 0 && !proxy[..i].contains('/') => &proxy[i + 1..],
-        _ => proxy,
+    let (scheme, rest) = match proxy.find(':') {
+        Some(i) if i > 0 && !proxy[..i].contains('/') => (Some(&proxy[..i]), &proxy[i + 1..]),
+        _ => (None, proxy),
     };
     let authority = if !rest.starts_with('/') {
         proxy
+    } else if scheme.is_some_and(|scheme| !scheme.eq_ignore_ascii_case("http")) {
+        return Err(PROXY_UNSUPPORTED);
     } else if !rest.starts_with("//") {
         return Err(NETWORK);
     } else {
@@ -616,10 +626,12 @@ mod tests {
             Ok(spec("proxy", 3128, None))
         );
         assert_eq!(
-            parse_proxy("https://proxy:3128/path"),
+            parse_proxy("HTTP://proxy:3128/path"),
             Ok(spec("proxy", 3128, None))
         );
-        assert_eq!(parse_proxy("socks5://proxy"), Ok(spec("proxy", 443, None)));
+        assert_eq!(parse_proxy("socks5://proxy"), Err(PROXY_UNSUPPORTED));
+        assert_eq!(parse_proxy("https://u:p@proxy"), Err(PROXY_UNSUPPORTED));
+        assert_eq!(parse_proxy("socks5:/proxy"), Err(PROXY_UNSUPPORTED));
         assert_eq!(parse_proxy("proxy:3128"), Ok(spec("proxy", 3128, None)));
         assert_eq!(
             parse_proxy("http://u:p%40ss@proxy:8080"),

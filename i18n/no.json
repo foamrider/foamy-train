@@ -111,6 +111,7 @@
   "Show minutes in the bar": "Vis minutter i linjen",
   "Show trains in the next": "Vis tog de neste",
   "That value isn't allowed.": "Den verdien er ikke tillatt.",
+  "The saved list in shell.json isn't valid, so it wasn't replaced.": "Den lagrede listen i shell.json er ugyldig, så den ble ikke erstattet.",
   "Snooze until tomorrow": "Slumre til i morgen",
   "snoozed": "slumrer",
   "outside your schedule": "utenfor tidsplanen",

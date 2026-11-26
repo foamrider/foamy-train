@@ -75,9 +75,11 @@ function pluginKeys() {
   for (const route of [{}, { from: station, to: station }]) {
     assert.throws(() => Model.route(route), error => { add('Model.route()', [error.message]); return true; });
   }
-  // What Panel.settingsError can hold besides the route errors.
+  // What Panel.settingsError can hold besides the route errors, and the
+  // kept-list error: no field here is a list, but kit/i18n-texts.json asks
+  // every catalog of a plugin with FoamyPrefs for it (check.sh).
   const Prefs = kit.load('FoamyPrefs');
-  add('kit FoamyPrefs', [Prefs.NOT_ALLOWED, Prefs.NO_ENTRY]);
+  add('kit FoamyPrefs', [Prefs.NOT_ALLOWED, Prefs.NO_ENTRY, Prefs.STORED_INVALID]);
   add('kit FoamyPrefsQueue', literals(read('kit', 'FoamyPrefsQueue.qml'), 'error = ').filter(Boolean));
   add('kit FoamyNative', [kit.load('FoamyNative').UNAVAILABLE_TEXT]);
   // SafeTextField (the station search field) asks the plugin's translator.

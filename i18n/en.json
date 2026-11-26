@@ -111,6 +111,7 @@
   "Show minutes in the bar": "Show minutes in the bar",
   "Show trains in the next": "Show trains in the next",
   "That value isn't allowed.": "That value isn't allowed.",
+  "The saved list in shell.json isn't valid, so it wasn't replaced.": "The saved list in shell.json isn't valid, so it wasn't replaced.",
   "Snooze until tomorrow": "Snooze until tomorrow",
   "snoozed": "snoozed",
   "outside your schedule": "outside your schedule",

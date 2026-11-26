@@ -230,4 +230,12 @@ Panel {
       }
     }
   }
+  // The settings controls give way when the queue refuses their key. Set
+  // from here: inside the body Component, an id of this file is an
+  // unqualified lookup for qmllint.
+  Binding {
+    target: popup.bodyItem
+    property: "queue"
+    value: prefs
+  }
 }

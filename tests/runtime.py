@@ -14,9 +14,12 @@ argument, a paste that fails after a search found no station shows its own
 error under the field, the schedule rows and the route fields save what they should, a
 snooze that can't be saved still applies and is logged, a weekly schedule
 from the settings hides or mutes the widget and stops fetching, a stored
-same-station route is reported without a fetch, and switching the weekly
+same-station route is reported without a fetch, switching the weekly
 schedule on in the popup's settings shows its day rows and keeps the page
-within its bounds while the popup grows to fit.
+within its bounds while the popup grows to fit, a choice or a day range the
+settings can't save (no bar entry) shows the saved one again at once, and,
+with real key presses, Esc closes the popup after it was closed on Settings
+and opened again, and after Back from Settings.
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
@@ -45,6 +48,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 
 SHELL = r"""
 import QtQuick
+import QtTest
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -75,6 +79,8 @@ ShellRoot {
   FloatingWindow {
     visible: true; implicitWidth: 1920; implicitHeight: 1080
     ScreenSim {}
+    // Real key presses, sent to the window that has the focus.
+    Item { TestEvent { id: ev } }
   }
   // The stock lock's in-process `lock isLocked` target.
   ShellIpc { target: "lock"; function isLocked(): string { return shell.locked ? "true" : "false" } }
@@ -528,10 +534,7 @@ ShellRoot {
     shell.entry = { route: shell.route, refreshSeconds: 300 }
     when(function() { return s.route && s.route.from.id === shell.route.from.id && idle() }, "a valid route is stored again", function() {
       scheduleReveal(700, true, function() {
-        scheduleReveal(0, false, function() {
-          console.log("FOAMY DONE")
-          Qt.quit()
-        })
+        scheduleReveal(0, false, stepRefusedChoice)
       })
     })
   }
@@ -600,6 +603,130 @@ ShellRoot {
         })
       })
     })
+  }
+  // Choices the settings can't save: without a bar entry (no module name)
+  // the queue refuses every save. A refused pick gives way to the saved
+  // choice at once, instead of showing beside the error until its hold ends.
+  function stepRefusedChoice() {
+    // The schedule on, as the host reflects it: "Outside the schedule" shows.
+    shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: true })
+    a.openSettings()
+    when(function() {
+      var outside = a.popup.bodyItem ? find(a.popup.bodyItem, "scheduleOutsideMode") : null
+      return a.opened && a.editingSettings && outside !== null && outside.visible
+    }, "Settings opens with every choice shown", function() {
+      var saves = bar.saved.length
+      a.moduleName = ""
+      // Each choice: pick an option other than the saved one.
+      var names = ["lookAheadHours", "refreshSeconds", "scheduleOutsideMode"]
+      for (var i = 0; i < names.length; i++) {
+        var choice = find(a.popup.bodyItem, names[i]), saved = choice.value
+        var before = shown(choice)
+        var other = choice.options.filter(function(option) { return option.value !== saved })[0]
+        choice.select(other.value)
+        var after = shown(choice)
+        check(JSON.stringify(after) === JSON.stringify(before) && after.indexOf(other.label) < 0,
+              "a refused pick of " + other.label + " in " + names[i] + " shows the saved choice again at once: "
+              + after.join(" | ") + " (before the pick: " + before.join(" | ") + ")")
+      }
+      check(bar.saved.length === saves && a.settingsError === "Settings can't be saved: this widget has no bar entry.",
+            "the picks are refused and nothing is saved: " + a.settingsError)
+      a.moduleName = "foamy.train"
+      shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: false })
+      a.close()
+      when(function() { return !a.opened }, "the popup closes after the refused picks", stepRefusedRange)
+    })
+  }
+  // A day range the settings can't save (no bar entry, as above): the day's
+  // time fields show the saved range again at once.
+  function stepRefusedRange() {
+    shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: true, scheduleMonday: "07:00-09:00" })
+    a.openSettings()
+    var monday = null
+    when(function() {
+      monday = a.popup.bodyItem ? find(a.popup.bodyItem, "scheduleMonday") : null
+      return a.opened && a.editingSettings && monday !== null && monday.visible && find(monday, "fromTime").text === "07:00"
+    }, "Settings opens with Monday's saved range", function() {
+      var from = find(monday, "fromTime"), to = find(monday, "toTime")
+      var saves = bar.saved.length
+      a.moduleName = ""
+      from.text = "08:15"; from.editingFinished()
+      check(bar.saved.length === saves && a.settingsError === "Settings can't be saved: this widget has no bar entry.",
+            "the range is refused and nothing is saved: " + a.settingsError)
+      check(from.text === "07:00" && to.text === "09:00",
+            "a refused range shows the saved 07:00-09:00 again at once: " + from.text + "-" + to.text)
+      a.moduleName = "foamy.train"
+      shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: false })
+      a.close()
+      when(function() { return !a.opened }, "the popup closes after the refused range", stepKeysClosedOnSettings)
+    })
+  }
+  // The keys after Settings hides, with real key presses: the popup closed
+  // on Settings opens again with its keys in the body, so Esc closes it; Esc
+  // on Settings goes back, and the next Esc closes the popup.
+  function focused() {
+    var window = a.popup.bodyItem ? a.popup.bodyItem.Window.window : null
+    return window ? window.activeFocusItem : null
+  }
+  function inside(item, ancestor) {
+    for (var at = item; at; at = at.parent) if (at === ancestor) return true
+    return false
+  }
+  function esc() { ev.keyClick(Qt.Key_Escape, Qt.NoModifier, -1) }
+  // Opens the popup (on Settings with `settings`) and runs `then` once its
+  // window is active. On the desktop the host's exclusive keyboard focus
+  // does that as the popup opens; offscreen, the test asks for it.
+  function openActive(settings, label, then) {
+    if (settings) a.openSettings()
+    else a.open()
+    when(function() { return a.opened && a.editingSettings === settings && a.popup.bodyItem !== null }, "the popup opens (" + label + ")", function() {
+      var window = a.popup.bodyItem.Window.window
+      window.requestActivate()
+      when(function() { return window.active }, "the popup's window is active (" + label + ")", then)
+    })
+  }
+  // Runs `then` once the settings page has the keys (its Back button).
+  function settingsHasKeys(label, then) {
+    var page = settingsPage(find(a.popup.bodyItem, "scheduleEnabled"))
+    when(function() { return page.visible && inside(focused(), page) }, "the settings page has the keys (" + label + ")", then)
+  }
+  function stepKeysClosedOnSettings() {
+    openActive(true, "closed on Settings", function() {
+      settingsHasKeys("closed on Settings", function() {
+        a.close()
+        check(!a.editingSettings, "closing the popup leaves Settings")
+        // Opened again once the closed popup has faded out, as a user would.
+        when(function() { return !a.popup.visible }, "the popup closed on Settings hides", function() {
+          openActive(false, "opened again", function() {
+            when(function() { return inside(focused(), a.popup.bodyItem) }, "the popup's body has the keys", function() {
+              var holder = focused()
+              esc()
+              check(!a.opened, "Esc closes the popup that was closed on Settings (the keys were on " + holder + ")")
+              when(function() { return !a.popup.visible }, "the popup closed with Esc hides", stepKeysAfterBack)
+            })
+          })
+        })
+      })
+    })
+  }
+  function stepKeysAfterBack() {
+    openActive(true, "Back", function() {
+      settingsHasKeys("Back", function() {
+        esc()
+        check(a.opened && !a.editingSettings, "Esc on Settings goes back")
+        // The keys come back to the popup's key catcher after Back.
+        wait.waitFor(function() { return focused() === a.popup.bodyItem }, 3000, function(back) {
+          check(back, "after Back the popup's key catcher has the keys: " + focused())
+          esc()
+          check(!a.opened, "the next Esc closes the popup")
+          done()
+        }, "the keys come back after Back")
+      })
+    })
+  }
+  function done() {
+    console.log("FOAMY DONE")
+    Qt.quit()
   }
 }
 """

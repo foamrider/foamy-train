@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -14,6 +15,9 @@ FoamySettingsPage {
   property var route: null
   property string pluginDir: ""
   property bool routeSaving: false
+  // The FoamyPrefsQueue the saves go through (Panel's; none in the preview):
+  // a choice or a day range it refuses shows the saved one again at once.
+  property QtObject queue: null
   signal saveRequested(string key, var value)
 
   function value(key) {
@@ -107,6 +111,8 @@ FoamySettingsPage {
       label: FoamyI18n.t("Show trains in the next")
       value: String(root.value("lookAheadHours"))
       enabled: !root.saving
+      queue: root.queue
+      queueKey: "lookAheadHours"
       options: root.choices(Schema.hourChoices, root.value("lookAheadHours")).map(function (hours) {
         return {
           value: String(hours),
@@ -130,6 +136,8 @@ FoamySettingsPage {
       label: FoamyI18n.t("Refresh every")
       value: String(root.value("refreshSeconds"))
       enabled: !root.saving
+      queue: root.queue
+      queueKey: "refreshSeconds"
       options: root.choices(Schema.refreshChoices, root.value("refreshSeconds")).map(function (seconds) {
         return {
           value: String(seconds),
@@ -176,6 +184,8 @@ FoamySettingsPage {
       label: FoamyI18n.t("Outside the schedule")
       value: root.value("scheduleOutsideMode")
       enabled: !root.saving
+      queue: root.queue
+      queueKey: "scheduleOutsideMode"
       options: [
         {
           value: "mute",
@@ -227,6 +237,8 @@ FoamySettingsPage {
         }
         value: root.value(modelData)
         enabled: !root.saving
+        queue: root.queue
+        queueKey: modelData
         onChanged: function (range) {
           root.saveRequested(modelData, range)
         }

@@ -104,8 +104,6 @@ PanelKeyCatcher {
       settingsPane.resetRoute()
       settingsPane.resetScroll()
       Qt.callLater(settingsPane.focusBack)
-    } else {
-      Qt.callLater(root.forceActiveFocus)
     }
   }
   onVisibleChanged: if (!visible) {

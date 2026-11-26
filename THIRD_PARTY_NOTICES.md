@@ -14,7 +14,7 @@ How the lists are made:
 
 - `bin/aarch64/foamy-train-helper`: sha256 `b3e649ff18ae4526a0f90c27072e6a4df2a6241851b2a00b8919b309f7bbd427`
 - `bin/x86_64/foamy-train-helper`: sha256 `81f022e8d09d7f5cdc5daae84803ecc9675e06a97e1894602890cd0a880da1e4`
-- `native/native.pin`: source `1b9d46f553a5ab6efada97d9c3f588a978a8f4ae3d2a350dcdee707cd6d862fe`, toolchain 1.99.1
+- `native/native.pin`: source `0e426d23f1332e5406efdb722633e8b872ec99d44e180283af9a4dc8e9500eb8`, toolchain 1.99.1
 
 ### Crates linked into `foamy-train-helper`
 

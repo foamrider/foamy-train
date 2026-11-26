@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -15,7 +16,7 @@ FoamySettingsPage {
   property string pluginDir: ""
   property bool routeSaving: false
   // The FoamyPrefsQueue the saves go through (Panel's; none in the preview):
-  // a choice it refuses shows the saved one again at once.
+  // a choice or a day range it refuses shows the saved one again at once.
   property QtObject queue: null
   signal saveRequested(string key, var value)
 
@@ -236,6 +237,8 @@ FoamySettingsPage {
         }
         value: root.value(modelData)
         enabled: !root.saving
+        queue: root.queue
+        queueKey: modelData
         onChanged: function (range) {
           root.saveRequested(modelData, range)
         }

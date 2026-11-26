@@ -16,8 +16,8 @@ snooze that can't be saved still applies and is logged, a weekly schedule
 from the settings hides or mutes the widget and stops fetching, a stored
 same-station route is reported without a fetch, switching the weekly
 schedule on in the popup's settings shows its day rows and keeps the page
-within its bounds while the popup grows to fit, and a choice the settings
-can't save (no bar entry) shows the saved one again at once.
+within its bounds while the popup grows to fit, and a choice or a day range
+the settings can't save (no bar entry) shows the saved one again at once.
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
@@ -629,7 +629,31 @@ ShellRoot {
       a.moduleName = "foamy.train"
       shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: false })
       a.close()
-      when(function() { return !a.opened }, "the popup closes after the refused picks", done)
+      when(function() { return !a.opened }, "the popup closes after the refused picks", stepRefusedRange)
+    })
+  }
+  // A day range the settings can't save (no bar entry, as above): the day's
+  // time fields show the saved range again at once.
+  function stepRefusedRange() {
+    shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: true, scheduleMonday: "07:00-09:00" })
+    a.openSettings()
+    var monday = null
+    when(function() {
+      monday = a.popup.bodyItem ? find(a.popup.bodyItem, "scheduleMonday") : null
+      return a.opened && a.editingSettings && monday !== null && monday.visible && find(monday, "fromTime").text === "07:00"
+    }, "Settings opens with Monday's saved range", function() {
+      var from = find(monday, "fromTime"), to = find(monday, "toTime")
+      var saves = bar.saved.length
+      a.moduleName = ""
+      from.text = "08:15"; from.editingFinished()
+      check(bar.saved.length === saves && a.settingsError === "Settings can't be saved: this widget has no bar entry.",
+            "the range is refused and nothing is saved: " + a.settingsError)
+      check(from.text === "07:00" && to.text === "09:00",
+            "a refused range shows the saved 07:00-09:00 again at once: " + from.text + "-" + to.text)
+      a.moduleName = "foamy.train"
+      shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: false })
+      a.close()
+      when(function() { return !a.opened }, "the popup closes after the refused range", done)
     })
   }
   function done() {

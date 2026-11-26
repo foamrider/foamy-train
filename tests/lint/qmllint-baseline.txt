@@ -33,10 +33,6 @@ Panel.qml: unqualified: Unqualified access | routeSaving: root.routeSaving
 Panel.qml: unqualified: Unqualified access | saving: root.saving
 Panel.qml: unqualified: Unqualified access | settings: root.effectiveSettings
 Panel.qml: unqualified: Unqualified access | settingsError: root.settingsError
-SettingsPane.qml: unqualified: Unqualified access | enabled: !root.saving
-SettingsPane.qml: unqualified: Unqualified access | onInvalid: root.saveRequested(modelData, "invalid")
-SettingsPane.qml: unqualified: Unqualified access | root.saveRequested(modelData, range)
-SettingsPane.qml: unqualified: Unqualified access | value: root.value(modelData)
 StationSearch.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var data = JSON.parse(output.text)
 StationSearch.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var stations = Model.stations(data)
 StationSearch.qml: id-shadows-member: Id for object SafeTextField shadows property "input". Rename one or the other. | input.text = value ? value.name : ""

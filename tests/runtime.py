@@ -14,9 +14,10 @@ argument, a paste that fails after a search found no station shows its own
 error under the field, the schedule rows and the route fields save what they should, a
 snooze that can't be saved still applies and is logged, a weekly schedule
 from the settings hides or mutes the widget and stops fetching, a stored
-same-station route is reported without a fetch, and switching the weekly
+same-station route is reported without a fetch, switching the weekly
 schedule on in the popup's settings shows its day rows and keeps the page
-within its bounds while the popup grows to fit.
+within its bounds while the popup grows to fit, and a choice the settings
+can't save (no bar entry) shows the saved one again at once.
 
 Uses the foamy-kit preview harness (temp HOME/XDG, no Wayland/Hyprland, no
 host scripts): FOAMY_KIT=/path/to/foamy-kit (default ~/GitHub/Personal/foamy-kit).
@@ -528,10 +529,7 @@ ShellRoot {
     shell.entry = { route: shell.route, refreshSeconds: 300 }
     when(function() { return s.route && s.route.from.id === shell.route.from.id && idle() }, "a valid route is stored again", function() {
       scheduleReveal(700, true, function() {
-        scheduleReveal(0, false, function() {
-          console.log("FOAMY DONE")
-          Qt.quit()
-        })
+        scheduleReveal(0, false, stepRefusedChoice)
       })
     })
   }
@@ -600,6 +598,43 @@ ShellRoot {
         })
       })
     })
+  }
+  // Choices the settings can't save: without a bar entry (no module name)
+  // the queue refuses every save. A refused pick gives way to the saved
+  // choice at once, instead of showing beside the error until its hold ends.
+  function stepRefusedChoice() {
+    // The schedule on, as the host reflects it: "Outside the schedule" shows.
+    shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: true })
+    a.openSettings()
+    when(function() {
+      var outside = a.popup.bodyItem ? find(a.popup.bodyItem, "scheduleOutsideMode") : null
+      return a.opened && a.editingSettings && outside !== null && outside.visible
+    }, "Settings opens with every choice shown", function() {
+      var saves = bar.saved.length
+      a.moduleName = ""
+      // Each choice: pick an option other than the saved one.
+      var names = ["lookAheadHours", "refreshSeconds", "scheduleOutsideMode"]
+      for (var i = 0; i < names.length; i++) {
+        var choice = find(a.popup.bodyItem, names[i]), saved = choice.value
+        var before = shown(choice)
+        var other = choice.options.filter(function(option) { return option.value !== saved })[0]
+        choice.select(other.value)
+        var after = shown(choice)
+        check(JSON.stringify(after) === JSON.stringify(before) && after.indexOf(other.label) < 0,
+              "a refused pick of " + other.label + " in " + names[i] + " shows the saved choice again at once: "
+              + after.join(" | ") + " (before the pick: " + before.join(" | ") + ")")
+      }
+      check(bar.saved.length === saves && a.settingsError === "Settings can't be saved: this widget has no bar entry.",
+            "the picks are refused and nothing is saved: " + a.settingsError)
+      a.moduleName = "foamy.train"
+      shell.entry = Object.assign({}, shell.entry, { scheduleEnabled: false })
+      a.close()
+      when(function() { return !a.opened }, "the popup closes after the refused picks", done)
+    })
+  }
+  function done() {
+    console.log("FOAMY DONE")
+    Qt.quit()
   }
 }
 """

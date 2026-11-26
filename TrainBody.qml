@@ -30,6 +30,9 @@ PanelKeyCatcher {
   property bool routeSaving: false
   property string settingsError: ""
   property bool retryable: false
+  // The FoamyPrefsQueue the settings save through (Panel's; none in the
+  // preview), for the settings controls that give way when it refuses.
+  property QtObject queue: null
 
   signal closeRequestedByView
   signal settingsRequested
@@ -185,6 +188,7 @@ PanelKeyCatcher {
     routeSaving: root.routeSaving
     error: root.settingsError
     retryable: root.retryable
+    queue: root.queue
     onSaveRequested: function (key, value) {
       root.saveRequested(key, value)
     }

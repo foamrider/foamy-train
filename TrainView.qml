@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -24,6 +26,9 @@ Column {
   property bool snoozed: false
   property bool routeBusy: false
   property string cursorKey: ""
+  // The keys moved the cursor last (FoamyCursor.byKeys): its stop draws
+  // the accent border.
+  property bool cursorByKeys: false
   // Expanded notice keys (notice detail shown).
   property var expanded: ({})
 
@@ -149,6 +154,7 @@ Column {
         foreground: FoamyPalette.secondaryText
         actionEnabled: !root.routeBusy
         hasCursor: root.cursorKey === "swap"
+        cursorByKeys: root.cursorByKeys
         onHoveredChanged: if (hovered)
           root.stopHovered("swap")
         onClicked: root.swapRequested()
@@ -268,6 +274,7 @@ Column {
           label: FoamyI18n.t("Choose stations")
           foreground: Commons.Color.accent
           hasCursor: root.cursorKey === "choose"
+          cursorByKeys: root.cursorByKeys
           onHoveredChanged: if (hovered)
             root.stopHovered("choose")
           onClicked: root.settingsRequested()
@@ -358,6 +365,7 @@ Column {
           notice: modelData
           filled: true
           cursorKey: "next/" + modelData.id
+          byKeys: root.cursorByKeys
           view: root
         }
       }
@@ -380,6 +388,7 @@ Column {
           notice: modelData
           filled: true
           cursorKey: "route/" + modelData.id
+          byKeys: root.cursorByKeys
           view: root
         }
       }
@@ -417,6 +426,7 @@ Column {
           language: root.language
           stale: root.stale
           view: root
+          cursorByKeys: root.cursorByKeys
         }
       }
     }
@@ -452,6 +462,7 @@ Column {
         spinning: root.loading
         actionEnabled: !root.loading && !root.routeBusy
         hasCursor: root.cursorKey === "refresh"
+        cursorByKeys: root.cursorByKeys
         onHoveredChanged: if (hovered)
           root.stopHovered("refresh")
         onClicked: root.refreshRequested()

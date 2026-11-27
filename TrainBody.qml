@@ -145,6 +145,7 @@ PanelKeyCatcher {
       snoozed: root.snoozed
       routeBusy: root.routeSaving
       cursorKey: root.cursorKey
+      cursorByKeys: cursor.byKeys
       onStopHovered: function (key) {
         cursor.hover(view.stops.indexOf(key))
         root.hold()

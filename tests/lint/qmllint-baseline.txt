@@ -48,17 +48,8 @@ TrainService.qml: import: Type TrainService not declared as singleton in qmldir 
 TrainService.qml: missing-property: Member "requestInput" not found on type TrainService::statusProcess with type Process | statusProcess.requestInput = JSON.stringify(route) + "\n"
 TrainView.qml: id-shadows-member: Id for object FoamyHeroBand shadows property "band". Rename one or the other. | var item = cursorKey === "swap" || cursorKey === "settings" ? band : cursorKey === "choose" ? chooseAction : cursorKey === "refresh" ? refreshAction : null
 TrainView.qml: id-shadows-member: Note: Id defined here | id: band
-TrainView.qml: unqualified: Unqualified access | destination: root.report.route ? root.report.route.to.name : ""
-TrainView.qml: unqualified: Unqualified access | destination: root.report.route ? root.report.route.to.name : ""
-TrainView.qml: unqualified: Unqualified access | language: root.language
-TrainView.qml: unqualified: Unqualified access | nowEpoch: root.nowEpoch
-TrainView.qml: unqualified: Unqualified access | stale: root.stale
 TrainView.qml: unqualified: Unqualified access | text: FoamyI18n.t(modelData.label)
 TrainView.qml: unqualified: Unqualified access | text: modelData.value
-TrainView.qml: unqualified: Unqualified access | text: root.formatNumber(parent.modelData.value)
-TrainView.qml: unqualified: Unqualified access | view: root
-TrainView.qml: unqualified: Unqualified access | view: root
-TrainView.qml: unqualified: Unqualified access | view: root
 preview/BarPreview.qml: missing-property: Member "background" not found on type "QObject" | color: Commons.Color.bar.background
 preview/BarPreview.qml: missing-property: Member "text" not found on type "QObject" | foreground: Commons.Color.bar.text
 preview/BarPreview.qml: property-override: Member "data" shadows member "data" from base type "QQuickItem", use a different name or add a final or override specifier. | readonly property var data: preview.sample(modelData.mode)

@@ -5,8 +5,9 @@ network): the bar's countdown and notice marker (only route information and
 the next train's information count as information), the popup's texts and
 cursor stops for normal, delayed, incidents, cancelled, offline, error,
 empty, loading, unconfigured, route notices, a long wait and an old update,
-and that Entur text never renders as markup. Runs on Omarchy 4.5 (the
-installed shell, or FOAMY_HOST_45).
+that status texts and icons read at 4.5:1 on what they are drawn on, and
+that Entur text never renders as markup. Runs on Omarchy 4.5 (the installed
+shell, or FOAMY_HOST_45), in the kit's dark, dim-red and light themes.
   python3 tests/states.py
 """
 
@@ -90,12 +91,17 @@ ShellRoot {
   readonly property Item view: body.scroller.contentItem.children[0]
 
   FoamyWait { id: wait }
-  // The checks are synchronous once the popup body has laid out its stops.
+  // The checks start once the popup body has laid out its stops; only the
+  // cursor checks in ink() wait (for the cursor fill to fade in).
   Component.onCompleted: wait.waitFor(function() { return shell.view && shell.view.stops.length === 3 }, 15000, function(ok) {
-    if (ok) { barStates(); popupStates(); ink(); markup() }
+    if (!ok) return done()
+    barStates(); popupStates()
+    ink(function() { markup(); done() })
+  }, "the popup body lays out its stops")
+  function done() {
     console.log("FOAMY DONE")
     Qt.quit()
-  }, "the popup body lays out its stops")
+  }
 
   // Sets the bar to one state (defaults for everything not named) and
   // returns what it shows.
@@ -212,9 +218,12 @@ ShellRoot {
   }
 
   // Status texts and icons read at 4.5:1 on what they are drawn on: the
-  // Cancelled label on its red pill on the card, a cancelled train's notice
-  // icon on the card under the cursor, and a station search error. main()
-  // runs the scene again in a dark theme with a dim red (2.70:1 raw).
+  // Cancelled label on its red pill on the card, the delay and on-time texts
+  // on a card, notice icons under the cursor's fill (one colour with and
+  // without it), the stale-data note on its yellow tint, the late text on
+  // the hero band, and a station search error. main() runs the scene in the
+  // dark theme, in a dark theme with a dim red (2.70:1 raw) and in a light
+  // theme, where a yellow must darken.
   function ancestor(item, match) {
     while (item && !match(item)) item = item.parent
     return item
@@ -223,33 +232,103 @@ ShellRoot {
     var ratio = FoamyPalette.contrastRatio(item.color, under)
     check(ratio >= 4.5, "ink, " + what + ": " + item.color + " on " + under + " reads " + ratio.toFixed(2) + ":1 (4.5:1 needed)")
   }
-  function ink() {
-    var view = show("incidents")
-    var found = []
-    walk(body, function(i) { if (i.visible && i.text === "Cancelled") found.push(i) })
+  // As reads(), but a colour the kit stepped as far as it goes (1.7 times,
+  // FoamyPalette.onSurface) passes under 4.5:1: in the light theme the
+  // yellow on the band's strongest tint ends there, at 4.40:1.
+  function readsOrCapped(item, raw, under, what) {
+    var ratio = FoamyPalette.contrastRatio(item.color, under)
+    var cap = Qt.color((FoamyPalette.lightTheme ? Qt.darker(raw, 1.7) : Qt.lighter(raw, 1.7)).toString())
+    check(ratio >= 4.5 || Qt.colorEqual(item.color, cap), "ink, " + what + ": " + item.color + " on " + under + " reads "
+          + ratio.toFixed(2) + ":1 (4.5:1 needed, or the kit's last step " + cap + ")")
+  }
+  function shown(match) {
+    var list = []
+    walk(body, function(i) { if (i.visible && match(i)) list.push(i) })
+    return list
+  }
+  function cardOf(item) { return ancestor(item, function(i) { return i.departure !== undefined }) }
+  // A departure card's fill as drawn on the popup.
+  function cardSurface(item) { return Qt.tint(FoamyPalette.background, cardOf(item).color) }
+  // A colour read from a property is a live reference: copy it to keep it.
+  function copy(c) { return Qt.rgba(c.r, c.g, c.b, c.a) }
+  // Puts the cursor on the notice at `key` and calls then(notice) once its
+  // fill has faded in (CursorSurface animates its colour): unchanged since
+  // the last poll and no longer the fill it had without the cursor.
+  function hover(key, then) {
+    var notice = shown(function(i) { return i.notice !== undefined && i.cursorKey === key })[0]
+    check(!!notice && !notice.hasCursor, "ink: the notice " + key + " is shown, without the cursor")
+    if (!notice) return then(null)
+    var before = copy(notice.color), last = before
+    shell.view.stopHovered(key)
+    wait.waitFor(function() {
+      var settled = Qt.colorEqual(notice.color, last) && !Qt.colorEqual(notice.color, before)
+      last = copy(notice.color)
+      return notice.hasCursor && settled
+    }, 5000, function(ok) { then(ok ? notice : null) }, "ink: the cursor's fill on " + key)
+  }
+  // The status icon of the notice at `key`, checked without and with the
+  // cursor on what lies under the notice (`under`, opaque).
+  function noticeIcon(key, under, what, then) {
+    var notice = shown(function(i) { return i.notice !== undefined && i.cursorKey === key })[0]
+    var icon = null
+    if (notice)
+      walk(notice, function(i) { if (!icon && i.visible && (i.name === "warning" || i.name === "cancelled")) icon = i })
+    check(!!icon, "ink: " + what + " has a status icon")
+    if (!icon) return then()
+    var before = copy(icon.color)
+    reads(icon, Qt.tint(under(notice), notice.color), what)
+    hover(key, function(lit) {
+      if (lit) {
+        reads(icon, Qt.tint(under(lit), lit.color), what + " under the cursor")
+        check(Qt.colorEqual(icon.color, before), "ink, " + what + ": one colour with and without the cursor: " + before + ", " + icon.color)
+      }
+      then()
+    })
+  }
+  function ink(then) {
+    show("delayed")
+    var delay = shown(function(i) { return i.text === "· +3 min" && cardOf(i) })
+    check(delay.length === 1, "ink: one delay text on a card in delayed, found " + delay.length)
+    if (delay.length === 1) reads(delay[0], cardSurface(delay[0]), "delay text on its card")
+    var band = find(body, "heroBand")
+    // The band's strongest tint: the wash's start colour under the full glow.
+    var paint = null
+    walk(band, function(i) { if (!paint && i.fill !== undefined && i.fillEnd !== undefined && i.glow !== undefined) paint = i })
+    var late = []
+    walk(band, function(i) { if (i.visible && i.text === "· 3 min late") late.push(i) })
+    check(!!paint && late.length === 1, "ink: the band paints a wash and shows the late text, found " + late.length)
+    if (paint && late.length === 1) readsOrCapped(late[0], FoamyPalette.warning, Qt.tint(paint.fill, paint.glow), "late text on the band")
+    noticeIcon("dep/b/signal2", cardSurface, "warning notice icon on a card", function() {
+      // Loading the next report clears the cursor.
+      show("normal")
+      show("delayed")
+      noticeIcon("next/signal", function() { return FoamyPalette.background }, "filled warning notice icon", function() { incidentsInk(then) })
+    })
+  }
+  function incidentsInk(then) {
+    show("incidents")
+    var found = shown(function(i) { return i.text === "Cancelled" })
     check(found.length === 1, "ink: one Cancelled label in incidents, found " + found.length)
-    if (found.length === 1) {
-      var card = ancestor(found[0], function(i) { return i.departure !== undefined })
-      reads(found[0], Qt.tint(Qt.tint(FoamyPalette.background, card.color), found[0].parent.color), "Cancelled on its pill")
-    }
-    view.cursorKey = "dep/c/withdrawn"
-    var icons = []
-    walk(body, function(i) { if (i.visible && i.name === "cancelled" && ancestor(i, function(a) { return a.notice !== undefined })) icons.push(i) })
-    check(icons.length === 1, "ink: one cancelled notice icon in incidents, found " + icons.length)
-    if (icons.length === 1) {
-      var notice = ancestor(icons[0], function(a) { return a.notice !== undefined })
-      var under = ancestor(notice, function(i) { return i.departure !== undefined })
-      check(notice.hasCursor, "ink: the cancelled train's notice has the cursor")
-      reads(icons[0], Qt.tint(Qt.tint(FoamyPalette.background, under.color), notice.color), "cancelled notice icon under the cursor")
-    }
-    view.cursorKey = ""
-    search.error = "Station search failed. Try again."
-    var errors = []
-    walk(search, function(i) { if (i.visible && i.text === search.error) errors.push(i) })
-    check(errors.length === 1, "ink: the station search error shows")
-    if (errors.length === 1)
-      reads(errors[0], FoamyPalette.background, "station search error")
-    search.error = ""
+    if (found.length === 1)
+      reads(found[0], Qt.tint(cardSurface(found[0]), found[0].parent.color), "Cancelled on its pill")
+    var onTime = shown(function(i) { return i.text === "· On time" && cardOf(i) })
+    check(onTime.length > 0, "ink: an on-time text on a card in incidents")
+    for (var i = 0; i < onTime.length; i++) reads(onTime[i], cardSurface(onTime[i]), "on-time text on its card")
+    noticeIcon("dep/c/withdrawn", cardSurface, "cancelled notice icon on its card", function() {
+      show("offline")
+      var note = shown(function(i) { return i.Accessible.role === Accessible.AlertMessage && i.text.indexOf("Cached times") === 0 })
+      check(note.length === 1, "ink: the stale-data note shows in offline, found " + note.length)
+      if (note.length === 1) reads(note[0], Qt.tint(FoamyPalette.background, note[0].parent.color), "stale-data note on its tint")
+
+      search.error = "Station search failed. Try again."
+      var errors = []
+      walk(search, function(i) { if (i.visible && i.text === search.error) errors.push(i) })
+      check(errors.length === 1, "ink: the station search error shows")
+      if (errors.length === 1)
+        reads(errors[0], FoamyPalette.background, "station search error")
+      search.error = ""
+      then()
+    })
   }
 
   // Entur data (station names, line, platform, notices, search labels) with
@@ -300,9 +379,10 @@ def check_theme(name, theme):
 
 
 def main():
-    # The kit's dim-red fixture: the status colour checks (ink) fail there
-    # when a text or icon draws the raw red.
-    themes = [("dark", "dark"), ("dim-red", str(KIT / "tests/fixtures/themes/dim-red.toml"))]
+    # The kit's dim-red fixture and light preview theme: the status colour
+    # checks (ink) fail there when a text or icon draws the raw red, or a
+    # yellow or green measured on the wrong surface.
+    themes = [("dark", "dark"), ("dim-red", str(KIT / "tests/fixtures/themes/dim-red.toml")), ("light", "light")]
     results = [check_theme(name, theme) for name, theme in themes]
     sys.exit(0 if all(results) else 1)
 

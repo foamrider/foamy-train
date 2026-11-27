@@ -32,8 +32,10 @@ Column {
     return !root.next || d.id !== root.next.id
   })
   readonly property bool unconfigured: report.status === "unconfigured"
-  // The hero's late text is on the band (its stronger, start colour).
-  readonly property color warningText: FoamyPalette.onSurface(FoamyPalette.warning, FoamyPalette.bandFill)
+  // The hero's late text is on the band: measured on its strongest tint, the
+  // wash's start colour under the full trailing-corner glow, so it reads
+  // wherever the row puts it.
+  readonly property color warningText: FoamyPalette.onSurface(FoamyPalette.warning, Qt.tint(FoamyPalette.bandFill, FoamyPalette.bandGlow))
 
   function formatNumber(value) {
     return FoamyI18n.number(value, 0)

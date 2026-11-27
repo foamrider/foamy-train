@@ -1,10 +1,6 @@
 # qmllint findings accepted when the check was adopted. tests/validate.sh fails on any
 # finding not listed here. Regenerate with `tests/validate.sh --update-baseline qmllint`
 # only to drop fixed entries or after reviewing every added one; never to pass a check.
-DepartureCard.qml: unqualified: Unqualified access | cancelled: root.departure.cancelled
-DepartureCard.qml: unqualified: Unqualified access | cursorKey: "dep/" + root.departure.id + "/" + modelData.id
-DepartureCard.qml: unqualified: Unqualified access | view: root.view
-DepartureCard.qml: unqualified: Unqualified access | width: body.width
 Notice.qml: missing-property: Member "cursorKey" not found on type "QQuickItem" | hasCursor: expandable && !!view && view.cursorKey === cursorKey
 Notice.qml: missing-property: Member "detailOpened" not found on type "QQuickItem" | view.detailOpened(root)
 Notice.qml: missing-property: Member "expanded" not found on type "QQuickItem" | readonly property bool expanded: !!view && !!view.expanded[cursorKey]

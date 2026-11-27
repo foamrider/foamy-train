@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -22,6 +23,8 @@ Rectangle {
   implicitHeight: body.implicitHeight + (root.departure.notices.length > 0 ? FoamyStyle.sectionGap : FoamyStyle.padding)
   radius: FoamyStyle.radius
   color: Qt.alpha(FoamyPalette.text, 0.05)
+  // The card's fill as drawn on the popup: what its status texts are read on.
+  readonly property color cardFill: Qt.tint(FoamyPalette.background, color)
   Column {
     id: body
     x: FoamyStyle.gapLarge
@@ -75,7 +78,7 @@ Rectangle {
               id: cancelledLabel
               anchors.centerIn: parent
               text: FoamyI18n.t("Cancelled")
-              color: Commons.Color.urgent
+              color: FoamyPalette.onSurface(Commons.Color.urgent, Qt.tint(root.cardFill, parent.color))
               wrapMode: Text.NoWrap
             }
           }
@@ -106,7 +109,7 @@ Rectangle {
           TrainText {
             visible: !root.departure.cancelled && !root.stale
             text: "· " + (root.departure.delay > 0 ? "+" + root.durationText(root.departure.delay) : FoamyI18n.t(root.departure.realtime ? "On time" : "Scheduled"))
-            color: root.departure.delay > 0 ? FoamyPalette.onSurface(FoamyPalette.warning) : root.departure.realtime ? FoamyPalette.onSurface(FoamyPalette.success) : FoamyPalette.secondaryText
+            color: root.departure.delay > 0 ? FoamyPalette.onSurface(FoamyPalette.warning, root.cardFill) : root.departure.realtime ? FoamyPalette.onSurface(FoamyPalette.success, root.cardFill) : FoamyPalette.secondaryText
             font.pixelSize: FoamyStyle.font.bodySmall
             wrapMode: Text.NoWrap
           }
@@ -129,6 +132,7 @@ Rectangle {
           width: body.width
           notice: modelData
           cancelled: root.departure.cancelled
+          surface: root.cardFill
           cursorKey: "dep/" + root.departure.id + "/" + modelData.id
           view: root.view
         }

@@ -13,6 +13,11 @@ FoamyCursorSurface {
   property bool filled: false
   property string cursorKey: ""
   property Item view: null
+  // The opaque colour under the notice (a departure card's fill in a card).
+  property color surface: FoamyPalette.background
+  // The status icon is read on the cursor's fill, the strongest one, so it
+  // keeps one colour with and without the cursor.
+  readonly property color iconSurface: Qt.tint(surface, FoamyPalette.hoverFill)
   readonly property bool expandable: notice.detail !== ""
   readonly property bool expanded: !!view && !!view.expanded[cursorKey]
 
@@ -49,7 +54,7 @@ FoamyCursorSurface {
         Layout.preferredHeight: FoamyStyle.iconSize
         // Information notices keep the announcement (megaphone) shape.
         name: root.notice.kind === "info" ? "megaphone" : root.cancelled ? "cancelled" : "warning"
-        color: root.notice.kind === "info" ? Commons.Color.accent : root.cancelled ? Commons.Color.urgent : FoamyPalette.onSurface(FoamyPalette.warning)
+        color: root.notice.kind === "info" ? Commons.Color.accent : root.cancelled ? FoamyPalette.onSurface(Commons.Color.urgent, root.iconSurface) : FoamyPalette.onSurface(FoamyPalette.warning, root.iconSurface)
       }
       TrainText {
         Layout.fillWidth: true

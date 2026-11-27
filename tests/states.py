@@ -29,6 +29,7 @@ import Quickshell
 import qs.Commons
 import "harness"
 import "plugin" as Train
+import "plugin/kit"
 import "plugin/Model.js" as Model
 import "plugin/tests/Fixtures.js" as Fixtures
 
@@ -91,7 +92,7 @@ ShellRoot {
   FoamyWait { id: wait }
   // The checks are synchronous once the popup body has laid out its stops.
   Component.onCompleted: wait.waitFor(function() { return shell.view && shell.view.stops.length === 3 }, 15000, function(ok) {
-    if (ok) { barStates(); popupStates(); markup() }
+    if (ok) { barStates(); popupStates(); ink(); markup() }
     console.log("FOAMY DONE")
     Qt.quit()
   }, "the popup body lays out its stops")
@@ -210,6 +211,47 @@ ShellRoot {
     check(has(body, "Updated 1 day ago"), "popup, an old update counts days: " + texts(body).join(" | "))
   }
 
+  // Status texts and icons read at 4.5:1 on what they are drawn on: the
+  // Cancelled label on its red pill on the card, a cancelled train's notice
+  // icon on the card under the cursor, and a station search error. main()
+  // runs the scene again in a dark theme with a dim red (2.70:1 raw).
+  function ancestor(item, match) {
+    while (item && !match(item)) item = item.parent
+    return item
+  }
+  function reads(item, under, what) {
+    var ratio = FoamyPalette.contrastRatio(item.color, under)
+    check(ratio >= 4.5, "ink, " + what + ": " + item.color + " on " + under + " reads " + ratio.toFixed(2) + ":1 (4.5:1 needed)")
+  }
+  function ink() {
+    var view = show("incidents")
+    var found = []
+    walk(body, function(i) { if (i.visible && i.text === "Cancelled") found.push(i) })
+    check(found.length === 1, "ink: one Cancelled label in incidents, found " + found.length)
+    if (found.length === 1) {
+      var card = ancestor(found[0], function(i) { return i.departure !== undefined })
+      reads(found[0], Qt.tint(Qt.tint(FoamyPalette.background, card.color), found[0].parent.color), "Cancelled on its pill")
+    }
+    view.cursorKey = "dep/c/withdrawn"
+    var icons = []
+    walk(body, function(i) { if (i.visible && i.name === "cancelled" && ancestor(i, function(a) { return a.notice !== undefined })) icons.push(i) })
+    check(icons.length === 1, "ink: one cancelled notice icon in incidents, found " + icons.length)
+    if (icons.length === 1) {
+      var notice = ancestor(icons[0], function(a) { return a.notice !== undefined })
+      var under = ancestor(notice, function(i) { return i.departure !== undefined })
+      check(notice.hasCursor, "ink: the cancelled train's notice has the cursor")
+      reads(icons[0], Qt.tint(Qt.tint(FoamyPalette.background, under.color), notice.color), "cancelled notice icon under the cursor")
+    }
+    view.cursorKey = ""
+    search.error = "Station search failed. Try again."
+    var errors = []
+    walk(search, function(i) { if (i.visible && i.text === search.error) errors.push(i) })
+    check(errors.length === 1, "ink: the station search error shows")
+    if (errors.length === 1)
+      reads(errors[0], FoamyPalette.background, "station search error")
+    search.error = ""
+  }
+
   // Entur data (station names, line, platform, notices, search labels) with
   // tags must show as text: every sink that holds a "<" is plain text.
   function markup() {
@@ -239,8 +281,8 @@ ShellRoot {
 """
 
 
-def main():
-    run = harness.Run("4.5", SHELL, plugin=PLUGIN, prefix="foamy-train-states-")
+def check_theme(name, theme):
+    run = harness.Run("4.5", SHELL, plugin=PLUGIN, theme=theme, prefix="foamy-train-states-")
     run.run(timeout=60)
     oks = run.log.count("FOAMY OK")
     # Nothing here may start a process or reach a host command.
@@ -249,12 +291,20 @@ def main():
         run.ok = False
         print("host commands run: " + "; ".join(hosts))
     if run.ok:
-        print(f"4.5: {oks} checks passed")
+        print(f"4.5 {name}: {oks} checks passed")
         run.cleanup()
-        sys.exit(0)
-    print("4.5: FAILED (%d ok)\n" % oks + "\n".join(run.failures() or run.log.splitlines()[-30:]))
+        return True
+    print(f"4.5 {name}: FAILED (%d ok)\n" % oks + "\n".join(run.failures() or run.log.splitlines()[-30:]))
     print(f"log kept at {run.base}")
-    sys.exit(1)
+    return False
+
+
+def main():
+    # The kit's dim-red fixture: the status colour checks (ink) fail there
+    # when a text or icon draws the raw red.
+    themes = [("dark", "dark"), ("dim-red", str(KIT / "tests/fixtures/themes/dim-red.toml"))]
+    results = [check_theme(name, theme) for name, theme in themes]
+    sys.exit(0 if all(results) else 1)
 
 
 if __name__ == "__main__":

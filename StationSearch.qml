@@ -131,7 +131,7 @@ Column {
     visible: root.searching || root.error !== "" || input.pasteError !== ""
     width: parent.width
     text: root.searching ? FoamyI18n.t("Searching…") : root.error !== "" ? root.error : FoamyI18n.t(input.pasteError)
-    color: root.searching ? FoamyPalette.mutedText : Commons.Color.urgent
+    color: root.searching ? FoamyPalette.mutedText : FoamyPalette.onSurface(FoamyPalette.error)
     font.pixelSize: FoamyStyle.font.bodySmall
   }
   Repeater {

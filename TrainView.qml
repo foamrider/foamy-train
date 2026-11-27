@@ -32,7 +32,10 @@ Column {
     return !root.next || d.id !== root.next.id
   })
   readonly property bool unconfigured: report.status === "unconfigured"
-  readonly property color warningText: FoamyPalette.onSurface(FoamyPalette.warning)
+  // The hero's late text is on the band: measured on its strongest tint, the
+  // wash's start colour under the full trailing-corner glow, so it reads
+  // wherever the row puts it.
+  readonly property color warningText: FoamyPalette.onSurface(FoamyPalette.warning, Qt.tint(FoamyPalette.bandFill, FoamyPalette.bandGlow))
 
   function formatNumber(value) {
     return FoamyI18n.number(value, 0)
@@ -337,7 +340,7 @@ Column {
         x: FoamyStyle.rowPadding
         y: FoamyStyle.rowPadding
         width: parent.width - FoamyStyle.rowPadding * 2
-        color: root.warningText
+        color: FoamyPalette.onSurface(FoamyPalette.warning, Qt.tint(FoamyPalette.background, parent.color))
         Accessible.role: Accessible.AlertMessage
         text: (root.stale ? FoamyI18n.t("Cached times; live predictions unavailable.") + (root.report.error ? "\n" : "") : "") + (root.report.error ? FoamyI18n.t(root.report.error) : "")
       }

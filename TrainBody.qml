@@ -106,7 +106,11 @@ PanelKeyCatcher {
       Qt.callLater(settingsPane.focusBack)
     }
   }
-  onVisibleChanged: if (!visible) {
+  onVisibleChanged: if (!visible)
+    resetCursor()
+  // As the popup opens: no cursor, the ⋯ menu closed (the preview calls it
+  // between its states).
+  function resetCursor() {
     cursor.reset()
     heldKey = ""
     view.band.closeMenu()

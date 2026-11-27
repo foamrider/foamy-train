@@ -6,8 +6,12 @@ pointer leaves and the 1 s clock rebuilds `departures` (a new array every
 tick, as TrainService does), which rebuilds `stops`. The highlight must stay
 on the last stop the pointer or keyboard chose, not ping-pong between the
 last two. Then the keys' cursor: after a key the stop under it draws the
-accent border, after a real pointer move none does, and a notice's icon
-keeps its colour either way. Runs on Omarchy 4.5 (the installed shell, or FOAMY_HOST_45).
+accent border, on it alone (every kind of stop: the band's ⋯, Switch
+direction, the next train's, the route's and the cards' notices, Refresh
+and Choose stations), after the pointer moves onto a stop or inside the
+stop the keys came to none does, and a notice's icon keeps its colour
+either way. Last, the preview's menu states start from the popup as it
+opens, not from the state before. Runs on Omarchy 4.5 (the installed shell, or FOAMY_HOST_45).
   python3 tests/cursor.py
 """
 
@@ -61,6 +65,35 @@ ShellRoot {
   }
   function steady(keys, key) { return keys.every(function(k) { return k === key }) }
   FoamyWait { id: wait }
+  // The preview (preview/Preview.qml) on a simulated screen, for the
+  // preview's states.
+  FloatingWindow {
+    visible: true; implicitWidth: 1920; implicitHeight: 1080
+    ScreenSim { id: sim }
+  }
+  MockBar { id: mockBar }
+  // Each preview state starts from the popup as it opens: stepped in the
+  // render's order, cursor → menu → menu-outside, the ⋯ menu is open with
+  // the keys' cursor on ⋯ (Settings), not carried over from the state before.
+  function previewStates(done) {
+    var component = Qt.createComponent(Qt.resolvedUrl("plugin/preview/Preview.qml"))
+    var preview = component.status === Component.Ready ? component.createObject(sim.content, { bar: mockBar, anchorItem: sim.anchor }) : null
+    check(preview !== null, "the preview loads: " + component.errorString())
+    if (!preview) return done()
+    preview.previewState = "cursor"
+    wait.waitFor(function() { return preview.popup.bodyItem !== null }, 15000, function(ok) {
+      check(ok, "the preview's popup body is built")
+      if (!ok) return done()
+      var previewBody = preview.popup.bodyItem
+      ;["menu", "menu-outside"].forEach(function(state) {
+        preview.previewState = state
+        var band = shell.findAll(previewBody, function(i) { return i.objectName === "heroBand" })[0]
+        check(previewBody.cursorKey === "settings" && band.menuOpen, "preview " + state + ": the menu open, the keys' cursor on ⋯: " + previewBody.cursorKey + " " + band.menuOpen)
+      })
+      preview.destroy()
+      done()
+    }, "the preview's popup body")
+  }
   // The steps are synchronous once the popup body has laid out its stops.
   Component.onCompleted: wait.waitFor(function() { return shell.view && shell.view.stops.length === 3 }, 15000, function(ok) {
     var quit = function() { console.log("FOAMY DONE"); Qt.quit() }
@@ -118,8 +151,25 @@ ShellRoot {
   function bordered() {
     return findAll(shell.view, function(i) {
       if (i.notice !== undefined && i.cursorKey !== undefined) return i.visible && i.borderTop > 0 && Qt.colorEqual(i.borderSpec.color, i.accent)
-      return i.cursorByKeys !== undefined && i.tooltipText !== undefined && i.border.width > 0
+      return i.visible && i.cursorByKeys !== undefined && i.tooltipText !== undefined && i.border.width > 0
     }).map(function(i) { return i.cursorKey || i.objectName || i.label })
+  }
+  // The name bordered() gives the stop with this cursor key.
+  function stopName(key) {
+    return { swap: "directionAction", settings: "foamyMenuButton", refresh: "refreshAction", choose: "Choose stations" }[key] || key
+  }
+  // The keys' cursor is on a stop: it alone draws the border.
+  function keysOn(what) {
+    var key = body.cursorKey
+    check(key !== "" && JSON.stringify(shell.bordered()) === JSON.stringify([shell.stopName(key)]), "the keys on " + key + " (" + what + "): its border, on it alone: " + JSON.stringify(shell.bordered()))
+  }
+  // With the report of `state`, the keys from the top to the stop `key`.
+  function keysTo(state, key) {
+    body.report = Fixtures.report(state)
+    for (var i = 0; i < 10 && body.cursorKey !== shell.view.stops[0]; i++) body.moveRequested(0, -1)
+    for (var j = 0; j < 10 && body.cursorKey !== key; j++) body.moveRequested(0, 1)
+    check(body.cursorKey === key, state + ": the keys reach " + key + ": " + body.cursorKey)
+    shell.keysOn(state)
   }
   function pointAt(item) { ev.mouseMove(item, item.width / 2, item.height / 2, -1, Qt.NoButton, Qt.NoModifier) }
   // Calls `then` once the popup has laid out and scrolled: the stop
@@ -138,15 +188,31 @@ ShellRoot {
     // A cancelled card's notice: its icon is measured on its fill under the cursor.
     body.report = Fixtures.report("incidents")
     var keyStop = "dep/c/withdrawn"
-    for (var i = 0; i < 10 && body.cursorKey !== keyStop; i++) body.moveRequested(0, 1)
+    // Each stop on the way down draws the border, on it alone: Switch
+    // direction, the band's ⋯ (Settings is in its menu), the next train's
+    // notice and the cards' notices.
+    for (var i = 0; i < 10 && body.cursorKey !== keyStop; i++) {
+      body.moveRequested(0, 1)
+      shell.keysOn("on the way down")
+    }
     var keyed = shell.notice(keyStop)
     check(body.cursorKey === keyStop && keyed.hasCursor && keyed.borderTop === FoamyStyle.borderWidth && JSON.stringify(shell.bordered()) === JSON.stringify([keyStop]), "the keys on " + keyStop + ": its accent border, on it alone: " + JSON.stringify(shell.bordered()))
-    var iconByKeys = shell.noticeIcon(keyed).color
+    // A copy: a color property read is a live reference.
+    var c = shell.noticeIcon(keyed).color
+    var iconByKeys = Qt.rgba(c.r, c.g, c.b, c.a)
     shell.settled(function() {
       shell.pointAt(shell.notice("dep/b/signal2"))
       check(body.cursorKey === "dep/b/signal2" && JSON.stringify(shell.bordered()) === "[]", "the pointer on another notice: the cursor there, no keys' border: " + body.cursorKey + " " + JSON.stringify(shell.bordered()))
       shell.pointAt(keyed)
       check(body.cursorKey === keyStop && JSON.stringify(shell.bordered()) === "[]" && Qt.colorEqual(shell.noticeIcon(keyed).color, iconByKeys), "the pointer back on " + keyStop + ": no border, its icon the colour it had under the keys: " + shell.noticeIcon(keyed).color + " " + iconByKeys)
+      // The keys away and back, under the resting pointer; then the
+      // pointer moves inside the notice the keys came to.
+      body.moveRequested(0, -1)
+      body.moveRequested(0, 1)
+      check(body.cursorKey === keyStop && JSON.stringify(shell.bordered()) === JSON.stringify([keyStop]), "the keys back on " + keyStop + " under the resting pointer: its border: " + JSON.stringify(shell.bordered()))
+      shell.settled(function() {
+      ev.mouseMove(keyed, keyed.width / 2 + 3, keyed.height / 2, -1, Qt.NoButton, Qt.NoModifier)
+      check(body.cursorKey === keyStop && JSON.stringify(shell.bordered()) === "[]", "the pointer moved inside " + keyStop + ": no border: " + body.cursorKey + " " + JSON.stringify(shell.bordered()))
       body.moveRequested(0, 1)
       check(body.cursorKey === "dep/d/short" && JSON.stringify(shell.bordered()) === JSON.stringify(["dep/d/short"]), "a key again: the border on the next notice: " + JSON.stringify(shell.bordered()))
       body.moveRequested(0, 1)
@@ -154,7 +220,12 @@ ShellRoot {
       shell.settled(function() {
         shell.pointAt(shell.findAll(shell.view, function(i) { return i.objectName === "refreshAction" })[0])
         check(body.cursorKey === "refresh" && JSON.stringify(shell.bordered()) === "[]", "the pointer on Refresh: no border: " + JSON.stringify(shell.bordered()))
-        done()
+        // Off the popup, then the route notices and Choose stations.
+        ev.mouseMove(body, body.width / 2, body.height + 40, -1, Qt.NoButton, Qt.NoModifier)
+        shell.keysTo("route", "route/station")
+        shell.keysTo("unconfigured", "choose")
+        shell.previewStates(done)
+      })
       })
     })
   }

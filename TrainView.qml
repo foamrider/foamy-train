@@ -127,6 +127,7 @@ Column {
     maxButtons: 2
     settingsHasCursor: root.cursorKey === "settings"
     menuHasCursor: root.cursorKey === "settings"
+    cursorByKeys: root.cursorByKeys
     onSettingsClicked: root.settingsRequested()
     onSettingsHovered: function (hovered) {
       if (hovered)

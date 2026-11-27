@@ -5,7 +5,7 @@
 crate native
 binary foamy-train-helper
 toolchain 1.99.1
-kit 0.17.0
-source c72fa2387714d9e1966eb373fa30de0a3a35c3fa6f3d9a6ebf0a7a066354fc37
-37e7d7d7f469bd4800ec75a8cf5c56787bac5a9c56420956bf6f6f275b9ab50a  bin/aarch64/foamy-train-helper
-83cf8a3b8d7c6106eb9bc61943734161e9f0c1df4ab3917320011f0b9c82abab  bin/x86_64/foamy-train-helper
+kit 0.17.1
+source de6a32c0764b318ddde9b6157f3a1fc41a71e4cadb5512ab6c1cbcf824318c2b
+0d24072bcff0fc0196b606acc2973ebfbd503d18ce44d2e5a04b6c4b769092a8  bin/aarch64/foamy-train-helper
+7f783dd4530e09a13a0f888dbd15d39434671616514e2bdd55227cc6c4369b6a  bin/x86_64/foamy-train-helper

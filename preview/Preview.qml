@@ -53,7 +53,10 @@ Item {
             body.applyCursorState()
           }
         }
+        // Each state starts from the popup as it opens, not from the
+        // state before (its cursor and open menu).
         function applyCursorState() {
+          resetCursor()
           if (preview.previewState === "cursor") {
             // Keyboard cursor on the first notice, expanded.
             moveRequested(0, 1)

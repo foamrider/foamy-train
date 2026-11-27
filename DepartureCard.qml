@@ -14,6 +14,9 @@ Rectangle {
   required property string language
   property bool stale: false
   property Item view: null
+  // The keys moved the cursor last: a notice with the cursor draws the
+  // accent border.
+  property bool cursorByKeys: false
   function formatNumber(value) {
     return FoamyI18n.number(value, 0)
   }
@@ -135,6 +138,7 @@ Rectangle {
           surface: root.cardFill
           cursorKey: "dep/" + root.departure.id + "/" + modelData.id
           view: root.view
+          byKeys: root.cursorByKeys
         }
       }
     }
